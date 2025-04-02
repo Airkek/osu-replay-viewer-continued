@@ -302,9 +302,9 @@ namespace osu_replay_renderer_netcore
             
             if (DecodeAudio)
             {
-                Console.WriteLine("Decoding audio...");
+                Logger.Log("Decoding audio...");
                 DecodedAudio = FFmpegAudioDecoder.Decode(GetCurrentBeatmapAudioPath());
-                Console.WriteLine("Audio decoded!");
+                Logger.Log("Audio decoded!");
                 if (Host is ReplayRecordGameHost recordHost) recordHost.AudioTrack = DecodedAudio;
             }
             
@@ -339,7 +339,6 @@ namespace osu_replay_renderer_netcore
             }
 
             RecorderReplayPlayerLoader loader = new RecorderReplayPlayerLoader(Player);
-            this.
             ScreenStack.Push(loader);
             ScreenStack.ScreenPushed += ScreenStack_ScreenPushed;
             

@@ -5,6 +5,8 @@ using osu_replay_renderer_netcore.CustomHosts;
 using osu_replay_renderer_netcore.Patching;
 using System;
 using System.IO;
+using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
+using osu.Framework.Timing;
 
 namespace osu_replay_renderer_netcore
 {
@@ -249,11 +251,9 @@ namespace osu_replay_renderer_netcore
                 new RenderPatcher().DoPatching();
             }
 
-            var game = new OsuGameRecorder();
-            modOverride.OnOptions += (args) => { game.ModsOverride.Add(args[0]); };
-            experimental.OnOptions += (args) => { game.ExperimentalFlags.Add(args[0]); };
             test.OnOptions += (args) => { SimpleTest.ExecuteTest(args[0]); };
             GameHost host;
+            OsuGameRecorder game;
 
             try
             {
@@ -269,6 +269,73 @@ namespace osu_replay_renderer_netcore
                     return;
                 }
 
+                if (recordMode.Triggered)
+                {
+                    if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, recordOutput[0])) return;
+                    var audioOutput = recordAudioOutput.ProcessedParameters.Length > 0 ? recordAudioOutput[0] : (recordOutput[0] + ".wav");
+                    if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, audioOutput)) return;
+
+                    int fps = ParseIntOrThrow(recordFPS[0]);
+                    int blending = ParseIntOrThrow(ffmpegFramesBlending[0]);
+                    
+                    var recordClock = new RecordClock(fps * blending);
+                    ClockPatcher.OnStopwatchClockSetAsSource += clock =>
+                    {
+                        clock.ChangeSource(new WrappedClock(recordClock, clock.Source as StopwatchClock));
+                    };
+                    var recordHost = new ReplayRecordGameHost("osu", recordClock);
+                    host = recordHost;
+
+                    recordHost.Resolution = new System.Drawing.Size
+                    {
+                        Width = ParseIntOrThrow(recordResolution[0]),
+                        Height = ParseIntOrThrow(recordResolution[1])
+                    };
+                    recordHost.Encoder = new CustomHosts.Record.ExternalFFmpegEncoder()
+                    {
+                        FPS = fps,
+                        Resolution = recordHost.Resolution,
+                        OutputPath = recordOutput[0],
+                        Preset = ffmpegPreset[0],
+                        Encoder = ffmpegVideoEncoder[0],
+                        Bitrate = ffmpegBitrate[0],
+
+                        // Smoothing options
+                        FramesBlending = blending,
+                        MotionInterpolation = ffmpegMotionInterpolation.Triggered,
+                    };
+                    recordHost.AudioOutput = audioOutput;
+                    recordHost.StartRecording();
+                }
+                else if (headlessMode.Triggered)
+                {
+                    var headlessHost = new ReplayHeadlessGameHost("osu", new HostOptions
+                    {
+                        //BindIPC = false
+                    });
+                    if (headlessLoopback.Triggered)
+                    {
+                        headlessHost.AudioInputDevice = ParseIntOrThrow(headlessLoopback[0]);
+                        headlessHost.AudioOutputDevice = ParseIntOrThrow(headlessLoopback[1]);
+                        headlessHost.OutputAudioToFile = headlessLoopback[2];
+                    }
+                    host = headlessHost;
+                }
+                else host = Host.GetSuitableDesktopHost("osu", new HostOptions
+                {
+                    //BindIPC = false
+                });
+                
+                game = new OsuGameRecorder();
+                modOverride.OnOptions += (args) => { game.ModsOverride.Add(args[0]); };
+                experimental.OnOptions += (args) => { game.ExperimentalFlags.Add(args[0]); };
+
+                if (applySkin.Triggered)
+                {
+                    game.SkinActionType = (SkinAction)Enum.Parse(typeof(SkinAction), applySkin[0][0].ToString().ToUpper() + applySkin[0].Substring(1));
+                    game.Skin = applySkin[1];
+                }
+                
                 if (generalList.Triggered)
                 {
                     game.ListReplays = true;
@@ -348,63 +415,6 @@ namespace osu_replay_renderer_netcore
                             };
                     }
                     game.ReplayViewType = generalView[0];
-                }
-
-                if (recordMode.Triggered)
-                {
-                    if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, recordOutput[0])) return;
-                    var audioOutput = recordAudioOutput.ProcessedParameters.Length > 0 ? recordAudioOutput[0] : (recordOutput[0] + ".wav");
-                    if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, audioOutput)) return;
-
-                    int fps = ParseIntOrThrow(recordFPS[0]);
-                    int blending = ParseIntOrThrow(ffmpegFramesBlending[0]);
-                    var recordHost = new ReplayRecordGameHost("osu", fps * blending);
-                    host = recordHost;
-
-                    recordHost.Resolution = new System.Drawing.Size
-                    {
-                        Width = ParseIntOrThrow(recordResolution[0]),
-                        Height = ParseIntOrThrow(recordResolution[1])
-                    };
-                    recordHost.Encoder = new CustomHosts.Record.ExternalFFmpegEncoder()
-                    {
-                        FPS = fps,
-                        Resolution = recordHost.Resolution,
-                        OutputPath = recordOutput[0],
-                        Preset = ffmpegPreset[0],
-                        Encoder = ffmpegVideoEncoder[0],
-                        Bitrate = ffmpegBitrate[0],
-
-                        // Smoothing options
-                        FramesBlending = blending,
-                        MotionInterpolation = ffmpegMotionInterpolation.Triggered,
-                    };
-                    recordHost.AudioOutput = audioOutput;
-                    recordHost.StartRecording();
-                }
-                else if (headlessMode.Triggered)
-                {
-                    var headlessHost = new ReplayHeadlessGameHost("osu", new HostOptions
-                    {
-                        //BindIPC = false
-                    });
-                    if (headlessLoopback.Triggered)
-                    {
-                        headlessHost.AudioInputDevice = ParseIntOrThrow(headlessLoopback[0]);
-                        headlessHost.AudioOutputDevice = ParseIntOrThrow(headlessLoopback[1]);
-                        headlessHost.OutputAudioToFile = headlessLoopback[2];
-                    }
-                    host = headlessHost;
-                }
-                else host = Host.GetSuitableDesktopHost("osu", new HostOptions
-                {
-                    //BindIPC = false
-                });
-
-                if (applySkin.Triggered)
-                {
-                    game.SkinActionType = (SkinAction)Enum.Parse(typeof(SkinAction), applySkin[0][0].ToString().ToUpper() + applySkin[0].Substring(1));
-                    game.Skin = applySkin[1];
                 }
 
                 // Misc

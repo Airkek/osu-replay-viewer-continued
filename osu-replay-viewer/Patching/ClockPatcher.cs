@@ -1,5 +1,6 @@
 ﻿using HarmonyLib;
 using System;
+using osu.Framework.Audio.Track;
 using osu.Framework.Timing;
 
 namespace osu_replay_renderer_netcore.Patching

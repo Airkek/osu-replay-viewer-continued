@@ -7,17 +7,17 @@ using osu.Framework.Timing;
 using osu_replay_renderer_netcore.Audio;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu_replay_renderer_netcore.Patching;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Reflection;
 using System.Threading.Tasks;
 using AutoMapper.Internal;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu_replay_renderer_netcore.Record;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Rendering;
 using osu.Game.Configuration;
 
 namespace osu_replay_renderer_netcore.CustomHosts
@@ -48,22 +48,18 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public ExternalFFmpegEncoder Encoder { get; set; }
         public bool UsingEncoder { get; set; } = true;
 
-        private VeldridWrapper wrapper;
+        private RenderWrapper wrapper;
 
         public double FPS => recordClock.FramesPerSecond;
 
         public ulong Frames => recordClock.CurrentFrame;
 
-        public ReplayRecordGameHost(string gameName = null, int frameRate = 60) : base(gameName, new HostOptions
+        public ReplayRecordGameHost(string gameName, RecordClock clock) : base(gameName, new HostOptions
         {
             //BindIPC = false
         })
         {
-            recordClock = new RecordClock(frameRate);
-            ClockPatcher.OnStopwatchClockSetAsSource += clock =>
-            {
-                clock.ChangeSource(new FramedStopWatchClock(recordClock, clock.Source as StopwatchClock));
-            };
+            recordClock = clock;
             RenderPatcher.OnDraw += OnDraw;
             PrepareAudioRendering();
         }
@@ -103,8 +99,26 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         protected override void ChooseAndSetupRenderer()
         {
-            SetupRendererAndWindow("veldrid", GraphicsSurfaceType.OpenGL);
-            wrapper = new VeldridWrapper(Renderer, Encoder);
+            SetupRendererAndWindow("gl", GraphicsSurfaceType.OpenGL);
+            wrapper = CreateWrapper(Renderer, Encoder.Resolution);
+        }
+
+        private static RenderWrapper CreateWrapper(IRenderer renderer, Size size)
+        {
+            RenderWrapper wrapper = null;
+            try
+            {
+                wrapper = new VeldridDeviceWrapper(renderer, size);
+                return wrapper;
+            } catch {}
+            
+            try
+            {
+                wrapper = new GLRendererWrapper(renderer, size);
+                return wrapper;
+            } catch {}
+
+            return wrapper;
         }
 
         public AudioBuffer FinishAudio()
@@ -140,8 +154,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
             MaximumDrawHz = recordClock.FramesPerSecond;
             MaximumUpdateHz = MaximumInactiveHz = 0;
         }
-
-        private Task<Image<Rgba32>> previousScreenshotTask;
         private bool setupHostInRender = false;
 
         protected virtual void SetupHostInRender()

@@ -27,17 +27,16 @@ namespace osu_replay_renderer_netcore.Patching
             base.DoPatching();
             
             var veldridDeviceType = typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.Veldrid.VeldridDevice");
-            
-            var swapBuffersMethod = veldridDeviceType.GetMethod("SwapBuffers");
-            Harmony.Patch(swapBuffersMethod,
-                GetType().GetMethod(nameof(VeldridSwapchainPrefix),
+            var veldridSwapBuffersMethod = veldridDeviceType.GetMethod("SwapBuffers");
+            Harmony.Patch(veldridSwapBuffersMethod,
+                GetType().GetMethod(nameof(SwapBuffersPrefix),
                     BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
             
-            
-            // var resizeMethod = veldridDeviceType.GetMethod("Resize");
-            // Harmony.Patch(resizeMethod,
-            //     GetType().GetMethod(nameof(VeldridResizePrefix),
-            //         BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
+            var glRendererType = typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.OpenGL.GLRenderer");
+            var glSwapBuffersMethod = glRendererType.GetMethod("SwapBuffers", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            Harmony.Patch(glSwapBuffersMethod,
+                GetType().GetMethod(nameof(SwapBuffersPrefix),
+                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
         }
 
         public static event Action OnDraw;
@@ -53,12 +52,7 @@ namespace osu_replay_renderer_netcore.Patching
             }
         }
 
-        static bool VeldridSwapchainPrefix(object __instance)
-        {
-            return false;
-        }
-        
-        static bool VeldridResizePrefix(object __instance)
+        static bool SwapBuffersPrefix(object __instance)
         {
             return false;
         }

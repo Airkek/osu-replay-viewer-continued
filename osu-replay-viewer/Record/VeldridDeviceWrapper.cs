@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.IO;
 using System.Reflection;
 using System.Threading;
@@ -10,61 +11,81 @@ using Veldrid.OpenGLBindings;
 
 namespace osu_replay_renderer_netcore.Record;
 
-public class VeldridWrapper
+public class VeldridDeviceWrapper : RenderWrapper
 {
     private static readonly Type VeldridRendererType =
         typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.Veldrid.VeldridRenderer");
-
-    private static readonly FieldInfo VeldridDeviceField = VeldridRendererType.GetField("veldridDevice",
+    private static readonly FieldInfo VeldridRenderer_veldridDeviceField = VeldridRendererType.GetField("veldridDevice",
         BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
+    private static readonly Type DeferredRendererType =
+        typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.Rendering.Deferred.DeferredRenderer");
+    private static readonly PropertyInfo DeferredRenderer_VeldridDeviceProperty = DeferredRendererType.GetProperty("VeldridDevice",
+        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    
     private static readonly Type VeldridDeviceType =
         typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.Veldrid.VeldridDevice");
-
-    private static readonly PropertyInfo GraphicsDeviceProperty =
+    private static readonly PropertyInfo VeldridDevice_DeviceProperty =
         VeldridDeviceType.GetProperty("Device", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-
-    private static readonly FieldInfo GraphicsSurfaceField = VeldridDeviceType.GetField("graphicsSurface",
+    private static readonly FieldInfo VeldridDevice_graphicsSurfaceField = VeldridDeviceType.GetField("graphicsSurface",
         BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
     private readonly IGraphicsSurface graphicsSurface;
     private readonly GraphicsDevice Device;
 
-    private readonly ExternalFFmpegEncoder Encoder;
-
-    public VeldridWrapper(IRenderer renderer, ExternalFFmpegEncoder encoder)
+    public VeldridDeviceWrapper(IRenderer renderer, Size desiredSize) : base(desiredSize)
     {
-        Encoder = encoder;
+        object veldridDevice;
+        if (renderer.GetType() == VeldridRendererType)
+        {
+            veldridDevice = VeldridRenderer_veldridDeviceField.GetValue(renderer);
+        } 
+        else if (renderer.GetType() == DeferredRendererType)
+        {
+            veldridDevice = DeferredRenderer_VeldridDeviceProperty.GetValue(renderer);
+        }
+        else
+        {
+            throw new ArgumentException($"Not supported renderer: {renderer.GetType()}");
+        }
 
-        if (renderer.GetType() != VeldridRendererType) throw new ArgumentException("Only Veldrid renderer supported");
-
-        var veldridDevice = VeldridDeviceField.GetValue(renderer);
-        if (veldridDevice is null) throw new Exception("veldridDevice is null");
+        if (veldridDevice is null)
+        {
+            throw new Exception("veldrid device is null");
+        }
 
         if (veldridDevice.GetType() != VeldridDeviceType)
-            throw new NotSupportedException("veldridDevice has unexpected type");
+        {
+            throw new NotSupportedException("veldrid device has unexpected type");
+        }
+           
 
-        var graphicsDevice = GraphicsDeviceProperty.GetValue(veldridDevice);
+        var graphicsDevice = VeldridDevice_DeviceProperty.GetValue(veldridDevice);
         if (graphicsDevice is null) throw new Exception("Device is null");
         if (graphicsDevice is not GraphicsDevice) throw new NotSupportedException("Device has unexpected type");
         Device = graphicsDevice as GraphicsDevice;
 
-        var graphicsSurfaceObj = GraphicsSurfaceField.GetValue(veldridDevice);
-        if (graphicsSurfaceObj is null) throw new Exception("graphicsSurface is null");
+        var graphicsSurfaceObj = VeldridDevice_graphicsSurfaceField.GetValue(veldridDevice);
+        if (graphicsSurfaceObj is null)
+        {
+            throw new Exception("graphicsSurface is null");
+        }
         if (graphicsSurfaceObj is not IGraphicsSurface)
+        {
             throw new NotSupportedException("graphicsSurface has unexpected type");
+        }
         graphicsSurface = graphicsSurfaceObj as IGraphicsSurface;
     }
 
     public ResourceFactory Factory
         => Device.ResourceFactory;
 
-    public unsafe void WriteScreenshotToStream(Stream stream)
+    public override unsafe void WriteScreenshotToStream(Stream stream)
     {
         var texture = Device.SwapchainFramebuffer.ColorTargets[0].Target;
         
-        var width = Encoder.Resolution.Width;
-        var height = Encoder.Resolution.Height;
+        var width = DesiredSize.Width;
+        var height = DesiredSize.Height;
 
         if (texture.Width != width || texture.Height != height)
         {
