@@ -34,10 +34,10 @@ namespace osu_replay_renderer_netcore.Patching
                     BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
             
             
-            var resizeMethod = veldridDeviceType.GetMethod("Resize");
-            Harmony.Patch(resizeMethod,
-                GetType().GetMethod(nameof(VeldridResizePrefix),
-                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
+            // var resizeMethod = veldridDeviceType.GetMethod("Resize");
+            // Harmony.Patch(resizeMethod,
+            //     GetType().GetMethod(nameof(VeldridResizePrefix),
+            //         BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
         }
 
         public static event Action OnDraw;

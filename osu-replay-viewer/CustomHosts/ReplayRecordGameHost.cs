@@ -103,9 +103,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         protected override void ChooseAndSetupRenderer()
         {
-            Environment.SetEnvironmentVariable("OSU_GRAPHICS_RENDERER", "veldrid");
-            base.ChooseAndSetupRenderer();
-            wrapper = new VeldridWrapper(Renderer);
+            SetupRendererAndWindow("veldrid", GraphicsSurfaceType.OpenGL);
+            wrapper = new VeldridWrapper(Renderer, Encoder);
         }
 
         public AudioBuffer FinishAudio()

@@ -62,7 +62,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                         break;
                 }
                 
-                string outputParameters = $"-c:v {Encoder} -vf \"vflip\" {encoderSpecific} -preset {Preset} {OutputPath}";
+                string outputParameters = $"-c:v {Encoder} -vf \"vflip\" {encoderSpecific} -pix_fmt yuv420p -preset {Preset} {OutputPath}";
 
                 return inputParameters + (inputEffect != null? (" " + inputEffect) : "") + " " + outputParameters;
             }

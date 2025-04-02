@@ -2,6 +2,7 @@
 using System.IO;
 using System.Reflection;
 using System.Threading;
+using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Platform;
 using Veldrid;
@@ -29,8 +30,12 @@ public class VeldridWrapper
     private readonly IGraphicsSurface graphicsSurface;
     private readonly GraphicsDevice Device;
 
-    public VeldridWrapper(IRenderer renderer)
+    private readonly ExternalFFmpegEncoder Encoder;
+
+    public VeldridWrapper(IRenderer renderer, ExternalFFmpegEncoder encoder)
     {
+        Encoder = encoder;
+
         if (renderer.GetType() != VeldridRendererType) throw new ArgumentException("Only Veldrid renderer supported");
 
         var veldridDevice = VeldridDeviceField.GetValue(renderer);
@@ -57,13 +62,19 @@ public class VeldridWrapper
     public unsafe void WriteScreenshotToStream(Stream stream)
     {
         var texture = Device.SwapchainFramebuffer.ColorTargets[0].Target;
+        
+        var width = Encoder.Resolution.Width;
+        var height = Encoder.Resolution.Height;
+
+        if (texture.Width != width || texture.Height != height)
+        {
+            return;
+        } 
 
         switch (graphicsSurface.Type)
         {
             case GraphicsSurfaceType.OpenGL:
             {
-                var width = (int)texture.Width;
-                var height = (int)texture.Height;
                 var bufferSize = width * height * 3;
 
                 var info = Device.GetOpenGLInfo();

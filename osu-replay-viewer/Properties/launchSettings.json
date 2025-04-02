@@ -2,7 +2,7 @@
   "profiles": {
     "osu-replay-renderer-netcore": {
       "commandName": "Project",
-      "commandLineArgs": "--view online 3523623901 -skin select \"- #Pink Dream - triple stack [triple_stack]\" -FENC h264_nvenc -FPR p7 -RSL 1280 720 -FPS 30 -R -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
+      "commandLineArgs": "--view online 3523623901 -skin select \"- #Pink Dream - triple stack [triple_stack]\" -FENC h264_nvenc -FPR p7 -RSL 1920 1080 -FPS 60 -R -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
     }
   }
 }
