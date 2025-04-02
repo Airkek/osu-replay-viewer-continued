@@ -5,10 +5,12 @@ using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Screens.Play;
 using System.Linq;
+using osu_replay_renderer_netcore.CustomHosts;
+using osu.Framework.Platform;
 
 namespace osu_replay_renderer_netcore
 {
-    class RecorderReplayPlayerLoader : PlayerLoader
+    internal partial class RecorderReplayPlayerLoader : PlayerLoader
     {
         private RecorderReplayPlayer player;
 
@@ -17,11 +19,17 @@ namespace osu_replay_renderer_netcore
             this.player = player;
         }
 
+        protected override void OnPlayerLoaded()
+        {
+            base.OnPlayerLoaded();
+        }
+
         protected override void LoadComplete()
         {
+            LoadComponent(player);
             base.LoadComplete();
-            PlayerSettings.RemoveAll(v => true);
-
+            PlayerSettings.RemoveAll(v => true, true);
+            
             (MetadataInfo.Children[0] as FillFlowContainer).RemoveRecursive(v => v is LoadingLayer);
             var mapMetadata = (MetadataInfo.Children[0] as FillFlowContainer).Children[5] as GridContainer;
             mapMetadata.RowDimensions = new[]

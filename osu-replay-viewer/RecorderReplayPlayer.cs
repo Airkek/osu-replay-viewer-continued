@@ -15,10 +15,16 @@ using osu_replay_renderer_netcore.HUD.Builtin;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
+using osu.Game.Rulesets.Osu;
+using osu.Game.Rulesets.Osu.UI;
+using osu.Game.Rulesets.Osu.UI.Cursor;
+using osu.Game.Skinning;
 
 namespace osu_replay_renderer_netcore
 {
-    class RecorderReplayPlayer : ReplayPlayer
+    partial class RecorderReplayPlayer : ReplayPlayer
     {
         public Score GivenScore { get; private set; }
         public bool ManipulateClock { get; set; } = false;
@@ -42,6 +48,15 @@ namespace osu_replay_renderer_netcore
             }
 
             var game = Game as OsuGameRecorder;
+            if (DrawableRuleset is DrawableOsuRuleset)
+            {
+                var cursorContainer = DrawableRuleset.Playfield.Cursor as OsuCursorContainer;
+                FieldInfo cursorTrailField = typeof(OsuCursorContainer)
+                    .GetField("cursorTrail", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                var trail = cursorTrailField.GetValue(cursorContainer) as SkinnableDrawable;
+                (trail).Clock = Clock;
+            }
+            
             if (
                 game.ExperimentalFlags.Contains("performance-graph") ||
                 game.ExperimentalFlags.Contains("performance-points-graph") ||
@@ -92,7 +107,7 @@ namespace osu_replay_renderer_netcore
             };
 
             DrawableRuleset.Playfield.NewResult += ppChange;
-            DrawableRuleset.Playfield.RevertResult += ppChange;
+            //DrawableRuleset.Playfield.RevertResult += ppChange;
         }
 
         protected override void StartGameplay()
@@ -101,8 +116,11 @@ namespace osu_replay_renderer_netcore
             {
                 GameplayClockContainer.Reset();
                 GameplayClockContainer.Start();
-                var clock = (GameplayClockContainer.GameplayClock.Source as FramedOffsetClock).Source as OsuGameRecorder.WrappedClock;
-                clock.TimeOffset = -clock.CurrentTime - 2000;
+                FieldInfo gameplayClockField = typeof(GameplayClockContainer)
+                    .GetField("GameplayClock", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                
+                var ogClock = gameplayClockField.GetValue(GameplayClockContainer) as FramedBeatmapClock;
+                var clock = ogClock.Source as WrappedClock;
                 foreach (Mod mod in GivenScore.ScoreInfo.Mods)
                 {
                     if (mod is IApplicableToRate rateMod) clock.RateMod = rateMod;

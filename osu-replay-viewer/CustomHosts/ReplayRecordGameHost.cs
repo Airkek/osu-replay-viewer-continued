@@ -11,7 +11,14 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Reflection;
 using System.Threading.Tasks;
+using AutoMapper.Internal;
+using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
+using osu_replay_renderer_netcore.Record;
+using osu.Framework.Graphics.Containers;
+using osu.Game.Configuration;
 
 namespace osu_replay_renderer_netcore.CustomHosts
 {
@@ -25,25 +32,45 @@ namespace osu_replay_renderer_netcore.CustomHosts
         // public override IEnumerable<string> UserStoragePaths => Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData).Yield();
         public override IEnumerable<string> UserStoragePaths => CrossPlatform.GetUserStoragePaths();
 
-        public override void OpenFileExternally(string filename) => Logger.Log($"Application has requested file \"{filename}\" to be opened.");
+        public override bool OpenFileExternally(string filename)
+        {
+            Logger.Log($"Application has requested file \"{filename}\" to be opened.");
+            return true;
+        }
         public override void OpenUrlExternally(string url) => Logger.Log($"Application has requested URL \"{url}\" to be opened.");
 
         private RecordClock recordClock;
         protected override IFrameBasedClock SceneGraphClock => recordClock;
-        protected override IWindow CreateWindow() => CrossPlatform.GetWindow();
+        protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => CrossPlatform.GetWindow(preferredSurface);
         protected override IEnumerable<InputHandler> CreateAvailableInputHandlers() => new InputHandler[] { };
 
-        public System.Drawing.Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 600 };
+        public System.Drawing.Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 720 };
         public ExternalFFmpegEncoder Encoder { get; set; }
         public bool UsingEncoder { get; set; } = true;
 
+        private VeldridWrapper wrapper;
+
+        public double FPS => recordClock.FramesPerSecond;
+
+        public ulong Frames => recordClock.CurrentFrame;
+
         public ReplayRecordGameHost(string gameName = null, int frameRate = 60) : base(gameName, new HostOptions
         {
-            BindIPC = false
+            //BindIPC = false
         })
         {
             recordClock = new RecordClock(frameRate);
+            ClockPatcher.OnStopwatchClockSetAsSource += clock =>
+            {
+                clock.ChangeSource(new FramedStopWatchClock(recordClock, clock.Source as StopwatchClock));
+            };
+            RenderPatcher.OnDraw += OnDraw;
             PrepareAudioRendering();
+        }
+
+        public void StartRecording()
+        {
+            Encoder.StartFFmpeg();
         }
 
         public AudioJournal AudioJournal { get; set; } = new();
@@ -54,15 +81,16 @@ namespace osu_replay_renderer_netcore.CustomHosts
         {
             AudioPatcher.OnTrackPlay += track =>
             {
-                Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
+                //Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
                 Console.WriteLine(track.CurrentTime);
                 if (AudioTrack == null) return;
-                AudioJournal.BufferAt(recordClock.CurrentTime / 1000.0 + 2.0, AudioTrack);
+                AudioJournal.BufferAt(recordClock.CurrentTime / 1000.0, AudioTrack);
             };
 
             AudioPatcher.OnSamplePlay += sample =>
             {
-                Console.WriteLine($"Audio Rendering: Sample played at frame #{recordClock.CurrentFrame}: Freq = {sample.Frequency.Value}:{sample.AggregateFrequency.Value} | Volume = {sample.Volume}:{sample.AggregateVolume} | {recordClock.CurrentTime}s");
+                if (sample is null) return;
+                //Console.WriteLine($"Audio Rendering: Sample played at frame #{recordClock.CurrentFrame}: Freq = {sample.Frequency.Value}:{sample.AggregateFrequency.Value} | Volume = {sample.Volume}:{sample.AggregateVolume} | {recordClock.CurrentTime / 1000}s");
                 AudioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
                 {
                     buff = buff.CreateCopy();
@@ -71,6 +99,13 @@ namespace osu_replay_renderer_netcore.CustomHosts
                     return buff;
                 });
             };
+        }
+
+        protected override void ChooseAndSetupRenderer()
+        {
+            Environment.SetEnvironmentVariable("OSU_GRAPHICS_RENDERER", "veldrid");
+            base.ChooseAndSetupRenderer();
+            wrapper = new VeldridWrapper(Renderer);
         }
 
         public AudioBuffer FinishAudio()
@@ -115,37 +150,61 @@ namespace osu_replay_renderer_netcore.CustomHosts
             Config.SetValue(FrameworkSetting.FrameSync, FrameSync.Unlimited);
         }
 
-        protected override void DrawFrame()
+        private Container getRoot()
         {
+            PropertyInfo rootProperty = typeof(DesktopGameHost).GetProperty("Root", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            MethodInfo getter = rootProperty.GetGetMethod(nonPublic: true);
+            
+            return getter.Invoke(this, null) as Container;
+        }
+
+        public readonly Stopwatch Timer = new();
+
+        protected override void DrawFrame()
+        {            
             // Make sure we're using correct framework config
             Config.SetValue(FrameworkSetting.WindowedSize, Resolution);
             Config.SetValue(FrameworkSetting.WindowMode, WindowMode.Windowed);
-
-            if (Root == null) return;
+            
             if (!setupHostInRender)
             {
                 setupHostInRender = true;
                 SetupHostInRender();
             }
 
+            if (getRoot() == null) return;
+
             // Draw
             base.DrawFrame();
+        }
 
-            // Advance the clock
-            //Console.WriteLine(recordClock.CurrentFrame + ": " + recordClock.CurrentTime);
-            recordClock.CurrentFrame++;
-
-            // Now we'll render it either to image files or feed it directly to FFmpeg
-            if (previousScreenshotTask != null)
+        private void OnDraw()
+        {
+            if (Encoder?.InputStream is null || !Encoder.InputStream.CanWrite)
             {
-                Task.WaitAll(previousScreenshotTask);
-                Image<Rgba32> ss = previousScreenshotTask.Result;
-                if (UsingEncoder && Encoder != null)
-                {
-                    if (ss.Width == Encoder.Resolution.Width && ss.Height == Encoder.Resolution.Height) Encoder.WriteFrame(ss);
-                }
+                return;
             }
-            previousScreenshotTask = TakeScreenshotAsync();
+            if (!Timer.IsRunning)
+            {
+                Timer.Start();
+                Logger.Log("Render started", LoggingTarget.Runtime, LogLevel.Important);
+            }
+            lock (Encoder.WriteLocker)
+            {
+                wrapper.WriteScreenshotToStream(Encoder.InputStream);
+                recordClock.CurrentFrame++;
+            }
+           
+            // if (previousScreenshotTask != null)
+            // {
+            //     Task.WaitAll(previousScreenshotTask);
+            //     Image<Rgba32> ss = previousScreenshotTask.Result;
+            //     if (UsingEncoder && Encoder != null)
+            //     {
+            //         if (ss.Width == Encoder.Resolution.Width && ss.Height == Encoder.Resolution.Height) Encoder.WriteFrame(ss);
+            //     }
+            // }
+            // previousScreenshotTask = TakeScreenshotAsync();
         }
     }
 }

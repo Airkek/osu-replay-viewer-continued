@@ -31,7 +31,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "ffmpeg",
+                    FileName = "C:\\ffmpeg\\ffmpeg.exe",
                     Arguments = args,
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true

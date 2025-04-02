@@ -8,7 +8,9 @@ using osu.Framework.Platform;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
+using AutoMapper.Internal;
 
 namespace osu_replay_renderer_netcore.CustomHosts
 {
@@ -113,9 +115,17 @@ namespace osu_replay_renderer_netcore.CustomHosts
             waveFileWriter.Write(trackBuffer, size);
         }*/
 
+        private Container getRoot()
+        {
+            PropertyInfo rootProperty = typeof(DesktopGameHost).GetProperty("Root", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            MethodInfo getter = rootProperty.GetGetMethod(nonPublic: true);
+            
+            return getter.Invoke(this, null) as Container;
+        } 
+        
         protected override void DrawFrame()
         {
-            if (Root == null) return;
+            if (getRoot == null) return;
             //var container = Root.Child as PlatformActionContainer;
 
             // Here we'll do something to the container

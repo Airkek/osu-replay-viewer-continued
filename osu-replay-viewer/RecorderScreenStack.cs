@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace osu_replay_renderer_netcore
 {
-    class RecorderScreenStack : OsuScreenStack
+    partial class RecorderScreenStack : OsuScreenStack
     {
         public float Parallax {
             get { return (InternalChildren[0] as ParallaxContainer).ParallaxAmount; }

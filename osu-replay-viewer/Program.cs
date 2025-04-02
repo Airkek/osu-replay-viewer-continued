@@ -29,7 +29,6 @@ namespace osu_replay_renderer_netcore
             OptionDescription recordResolution;
             OptionDescription recordFPS;
             OptionDescription recordAudioOutput;
-            OptionDescription recordJpegMode;
 
             OptionDescription ffmpegPreset;
             OptionDescription ffmpegFramesBlending;
@@ -142,8 +141,8 @@ namespace osu_replay_renderer_netcore
                         Description = "Set the output resolution",
                         DoubleDashes = new[] { "record-resolution" },
                         SingleDash = new[] { "RSL" },
-                        Parameters = new[] { "Width = 1280", "Height = 600" },
-                        ProcessedParameters = new[] { "1280", "600" }
+                        Parameters = new[] { "Width = 1280", "Height = 720" },
+                        ProcessedParameters = new[] { "1280", "720" }
                     },
                     recordFPS = new()
                     {
@@ -153,13 +152,6 @@ namespace osu_replay_renderer_netcore
                         SingleDash = new[] { "FPS" },
                         Parameters = new[] { "FPS = 60" },
                         ProcessedParameters = new[] { "60" }
-                    },
-                    recordJpegMode = new()
-                    {
-                        Name = "Jpeg Output Mode",
-                        Description = "Send Jpeg data to FFmpeg process instead of raw pixels",
-                        DoubleDashes = new[] { "jpeg" },
-                        SingleDash = new[] { "JPG" }
                     },
 
                     // FFmpeg options
@@ -252,7 +244,9 @@ namespace osu_replay_renderer_netcore
             // Apply patches
             if (ShouldApplyPatch(args))
             {
-                AudioPatcher.DoPatching();
+                new AudioPatcher().DoPatching();
+                new ClockPatcher().DoPatching();
+                new RenderPatcher().DoPatching();
             }
 
             var game = new OsuGameRecorder();
@@ -380,21 +374,19 @@ namespace osu_replay_renderer_netcore
                         Preset = ffmpegPreset[0],
                         Encoder = ffmpegVideoEncoder[0],
                         Bitrate = ffmpegBitrate[0],
-                        UsingJPEG = recordJpegMode.Triggered,
 
                         // Smoothing options
                         FramesBlending = blending,
                         MotionInterpolation = ffmpegMotionInterpolation.Triggered,
                     };
                     recordHost.AudioOutput = audioOutput;
-                    
-                    recordHost.Encoder.StartFFmpeg();
+                    recordHost.StartRecording();
                 }
                 else if (headlessMode.Triggered)
                 {
                     var headlessHost = new ReplayHeadlessGameHost("osu", new HostOptions
                     {
-                        BindIPC = false
+                        //BindIPC = false
                     });
                     if (headlessLoopback.Triggered)
                     {
@@ -406,7 +398,7 @@ namespace osu_replay_renderer_netcore
                 }
                 else host = Host.GetSuitableDesktopHost("osu", new HostOptions
                 {
-                    BindIPC = false
+                    //BindIPC = false
                 });
 
                 if (applySkin.Triggered)

@@ -16,7 +16,7 @@ namespace osu_replay_renderer_netcore.HUD.Builtin
     /// Performance points graph. This HUD is the PP graph, which shows historical PP
     /// data (it might store some future data if you use seeking feature)
     /// </summary>
-    public class PerformanceGraph : BoxOverlay
+    public partial class PerformanceGraph : BoxOverlay
     {
         private const int NUM_OF_SEGMENTS = 1000;
         private const double MS_PER_SEGMENT = 1;

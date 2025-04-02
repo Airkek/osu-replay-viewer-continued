@@ -7,8 +7,11 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using osu_replay_renderer_netcore.Audio;
+using SixLabors.ImageSharp.Advanced;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record
 {
@@ -17,11 +20,9 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
     /// </summary>
     public class ExternalFFmpegEncoder
     {
+        public readonly object WriteLocker = new();
         public Process FFmpeg { get; private set; }
         public Stream InputStream { get; private set; }
-        public JpegEncoder JpegEncoder { get; private set; }
-
-        public bool UsingJPEG { get; set; } = false;
         public int FPS { get; set; } = 60;
         public System.Drawing.Size Resolution { get; set; }
         public string OutputPath { get; set; } = "output.mp4";
@@ -42,29 +43,33 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             {
                 int actualFramesBlending = Math.Max(FramesBlending, 1);
 
-                string inputParameters;
-                if (UsingJPEG) inputParameters = $"-f image2pipe -vcodec mjpeg -framerate {FPS * actualFramesBlending} -i pipe:";
-                else inputParameters = $"-f rawvideo -pixel_format rgb24 -video_size {Resolution.Width}x{Resolution.Height} -framerate {FPS * actualFramesBlending} -i pipe:";
+                string inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Resolution.Width}x{Resolution.Height} -r {FPS * actualFramesBlending} -i pipe:";
 
                 string inputEffect;
                 if (actualFramesBlending > 1) inputEffect = $"-vf tblend=all_mode=average -r {FPS}";
                 else if (MotionInterpolation) inputEffect = $"-vf minterpolate=fps={FPS * 4}";
                 else inputEffect = null;
-                string outputParameters = $"-b:v {Bitrate} -c:v {Encoder} -preset {Preset} {OutputPath}";
 
-                /*if (actualFramesBlending > 1) return $"-f image2pipe -vcodec {ImageFormat} -framerate {FPS * actualFramesBlending} -i pipe: -vf tblend=all_mode=average -r {FPS} -preset {Preset} {OutputPath}";
-                else if (MotionInterpolation) return $"-f image2pipe -vcodec {ImageFormat} -framerate {FPS} -i pipe: -vf minterpolate=fps={FPS * 4} -preset {Preset} {OutputPath}";
-                else return $"-f image2pipe -vcodec {ImageFormat} -framerate {FPS} -i pipe: -preset {Preset} {OutputPath}";*/
+                var encoderSpecific = "";
+
+                switch (Encoder)
+                {
+                    case "h264_nvenc":
+                        encoderSpecific = "-g 450 -rc constqp -qp 21";
+                        break;
+                    case "libx264":
+                        encoderSpecific = "-g 450 -crf 21";
+                        break;
+                }
+                
+                string outputParameters = $"-c:v {Encoder} -vf \"vflip\" {encoderSpecific} -preset {Preset} {OutputPath}";
+
                 return inputParameters + (inputEffect != null? (" " + inputEffect) : "") + " " + outputParameters;
             }
         }
 
-        private byte[] buffer;
-
         public void StartFFmpeg()
         {
-            buffer = new byte[Resolution.Width * Resolution.Height * 3];
-
             Console.WriteLine("Starting FFmpeg process with arguments: " + FFmpegArguments);
             FFmpeg = new Process()
             {
@@ -72,44 +77,30 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "ffmpeg",
-                    /*Arguments = string.Join(" ",
-                        "-f image2pipe",
-                        "-vcodec " + imageFormat,
-                        "-framerate " + fps,
-                        "-i pipe:",
-                        "-preset " + preset,
-                        outputPath
-                    ),*/
+                    FileName = "C:\\ffmpeg\\ffmpeg.exe",
                     Arguments = FFmpegArguments,
                     RedirectStandardInput = true
                 }
             };
             FFmpeg.Start();
             InputStream = FFmpeg.StandardInput.BaseStream;
-            if (UsingJPEG) JpegEncoder = new();
         }
 
-        public void WriteFrame(Image<Rgba32> image)
+        public void WriteAudio(string file)
         {
-            if (!UsingJPEG) WriteRGBA(image);
-            else image.SaveAsJpeg(InputStream, JpegEncoder);
-        }
-
-        public void WriteRGBA(Image<Rgba32> image)
-        {
-            if (image.Width != Resolution.Width || image.Height != Resolution.Height) throw new ArgumentException("Invaild image size");
-            if (image.TryGetSinglePixelSpan(out var span))
+            var ffmpeg = new Process()
             {
-                for (int i = 0; i < span.Length; i++)
+                StartInfo =
                 {
-                    Rgba32 pixel = span[i];
-                    buffer[i * 3] = pixel.R;
-                    buffer[i * 3 + 1] = pixel.G;
-                    buffer[i * 3 + 2] = pixel.B;
+                    UseShellExecute = false,
+                    CreateNoWindow = false,
+                    FileName = "C:\\ffmpeg\\ffmpeg.exe",
+                    Arguments = $"-y -i {OutputPath} -i {file} -c:v copy -c:a aac {OutputPath}.audio.mp4",
+                    RedirectStandardInput = false
                 }
-            }
-            InputStream.Write(buffer);
+            };
+            ffmpeg.Start();
+            ffmpeg.WaitForExit();
         }
     }
 }
