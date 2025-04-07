@@ -191,7 +191,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 SetupHostInRender();
             }
 
-            if (getRoot() == null) return;
+            var root = getRoot();
+            if (root is null || !root.IsLoaded) return;
 
             // Draw
             base.DrawFrame();
