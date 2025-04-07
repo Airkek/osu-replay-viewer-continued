@@ -55,10 +55,13 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 switch (Encoder)
                 {
                     case "h264_nvenc":
-                        encoderSpecific = "-g 450 -rc constqp -qp 21";
+                        encoderSpecific = "-rc constqp -qp 21";
                         break;
                     case "libx264":
-                        encoderSpecific = "-g 450 -crf 21";
+                    case "h264_amf":
+                    case "h264_qsv":
+                    case "h264_videotoolbox":
+                        encoderSpecific = "-crf 21";
                         break;
                 }
                 
