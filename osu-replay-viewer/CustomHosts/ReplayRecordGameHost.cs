@@ -99,7 +99,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         protected override void ChooseAndSetupRenderer()
         {
-            SetupRendererAndWindow("gl", GraphicsSurfaceType.OpenGL);
+            SetupRendererAndWindow("veldrid", GraphicsSurfaceType.OpenGL);
             wrapper = CreateWrapper(Renderer, Encoder.Resolution);
         }
 
