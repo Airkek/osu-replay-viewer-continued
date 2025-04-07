@@ -120,7 +120,7 @@ namespace osu_replay_renderer_netcore
                 Console.WriteLine();
 
                 // Hacky way to get realm access
-                RealmAccess realm = (RealmAccess) typeof(ScoreManager).GetField("realm", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(ScoreManager);
+                RealmAccess realm = (RealmAccess) typeof(ScoreManager).GetProperty("Realm", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(ScoreManager);
 
                 foreach (ScoreInfo info in realm.Run(r => r.All<ScoreInfo>().Detach()))
                 {
@@ -208,8 +208,6 @@ namespace osu_replay_renderer_netcore
                     score = ScoreManager.GetScore(scoreInfo);
                     break;
                 case "auto":
-                    var ruleset = new OsuRuleset();
-
                     var beatmapInfo = BeatmapManager.QueryBeatmap(v => v.OnlineID == ReplayAutoBeatmapID);
                     if (beatmapInfo == null)
                     {
@@ -219,6 +217,7 @@ namespace osu_replay_renderer_netcore
                         return;
                     }
 
+                    var ruleset = beatmapInfo.Ruleset.CreateInstance();
                     var working = BeatmapManager.GetWorkingBeatmap(beatmapInfo);
                     var beatmap = working.GetPlayableBeatmap(ruleset.RulesetInfo, new[] { ruleset.GetAutoplayMod() });
                     score = ruleset.GetAutoplayMod().CreateScoreFromReplayData(beatmap, new[] { ruleset.GetAutoplayMod() });
