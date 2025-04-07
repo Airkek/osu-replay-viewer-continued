@@ -4,7 +4,10 @@ using osu_replay_renderer_netcore.CLI;
 using osu_replay_renderer_netcore.CustomHosts;
 using osu_replay_renderer_netcore.Patching;
 using System;
+using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu.Framework.Timing;
 
@@ -243,12 +246,15 @@ namespace osu_replay_renderer_netcore
                 }
             };
 
+
+            var patched = false;
             // Apply patches
             if (ShouldApplyPatch(args))
-            {
+            { 
                 new AudioPatcher().DoPatching();
                 new ClockPatcher().DoPatching();
                 new RenderPatcher().DoPatching();
+                patched = true;
             }
 
             test.OnOptions += (args) => { SimpleTest.ExecuteTest(args[0]); };
@@ -285,8 +291,9 @@ namespace osu_replay_renderer_netcore
                     };
                     var recordHost = new ReplayRecordGameHost("osu", recordClock);
                     host = recordHost;
+                    recordHost.IsFinishFramePatched = patched;
 
-                    recordHost.Resolution = new System.Drawing.Size
+                    recordHost.Resolution = new Size
                     {
                         Width = ParseIntOrThrow(recordResolution[0]),
                         Height = ParseIntOrThrow(recordResolution[1])
@@ -467,6 +474,12 @@ namespace osu_replay_renderer_netcore
             };
         }
 
+        private static bool CanApplyPatch()
+        {
+            return RuntimeInformation.ProcessArchitecture == Architecture.X86 ||
+                   RuntimeInformation.ProcessArchitecture == Architecture.X64;
+        }
+
         /// <summary>
         /// Determine when to apply Harmony patches. Could decrease start time.
         /// </summary>
@@ -474,8 +487,7 @@ namespace osu_replay_renderer_netcore
         /// <returns></returns>
         private static bool ShouldApplyPatch(string[] args)
         {
-            foreach (var arg in args) if (arg.Equals("--record") || arg.Equals("-R")) return true;
-            return false;
+            return CanApplyPatch() && args.Any(arg => arg.Equals("--record") || arg.Equals("-R"));
         }
     }
 }

@@ -47,6 +47,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public System.Drawing.Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 720 };
         public ExternalFFmpegEncoder Encoder { get; set; }
         public bool UsingEncoder { get; set; } = true;
+        public bool IsFinishFramePatched { get; set; } = false;
 
         private RenderWrapper wrapper;
 
@@ -196,6 +197,11 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             // Draw
             base.DrawFrame();
+
+            if (!IsFinishFramePatched)
+            {
+                OnDraw();
+            }
         }
 
         private void OnDraw()
