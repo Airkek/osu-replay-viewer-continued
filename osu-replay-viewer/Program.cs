@@ -378,7 +378,6 @@ namespace osu_replay_renderer_netcore
                             break;
                     }
                     recordHost.AudioOutput = audioOutput;
-                    recordHost.StartRecording();
                 }
                 else if (headlessMode.Triggered)
                 {

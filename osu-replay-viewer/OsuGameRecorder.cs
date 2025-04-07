@@ -345,6 +345,13 @@ namespace osu_replay_renderer_netcore
             }
 
             RecorderReplayPlayerLoader loader = new RecorderReplayPlayerLoader(Player);
+            loader.OnLoadComplete += _ =>
+            {
+                if (Host is ReplayRecordGameHost record)
+                {
+                    record.StartRecording();
+                }
+            };
             ScreenStack.Push(loader);
             ScreenStack.ScreenPushed += ScreenStack_ScreenPushed;
             
