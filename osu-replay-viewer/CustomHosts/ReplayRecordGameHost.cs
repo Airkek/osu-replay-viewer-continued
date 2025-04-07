@@ -174,7 +174,15 @@ namespace osu_replay_renderer_netcore.CustomHosts
         protected override void DrawFrame()
         {            
             // Make sure we're using correct framework config
-            Config.SetValue(FrameworkSetting.WindowedSize, Resolution);
+            if (RuntimeInfo.IsApple)
+            {
+                // Retina display
+                Config.SetValue(FrameworkSetting.WindowedSize, Resolution / 2);
+            }
+            else
+            {
+                Config.SetValue(FrameworkSetting.WindowedSize, Resolution);
+            }
             Config.SetValue(FrameworkSetting.WindowMode, WindowMode.Windowed);
             
             if (!setupHostInRender)
