@@ -4,28 +4,23 @@ using System.IO;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record
 {
-    /// <summary>
-    /// FFmpeg video encoder with actual FFmpeg executable instead of FFmpeg.AutoGen
-    /// </summary>
     public class ExternalFFmpegEncoder : EncoderBase
     {
-        
         private Process FFmpeg { get; set; }
         private Stream InputStream { get; set; }
         private string FFmpegArguments
         {
             get
             {
-                int actualFramesBlending = Math.Max(FramesBlending, 1);
+                var actualFramesBlending = Math.Max(FramesBlending, 1);
 
-                string inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Resolution.Width}x{Resolution.Height} -r {FPS * actualFramesBlending} -i pipe:";
+                var inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Resolution.Width}x{Resolution.Height} -r {FPS * actualFramesBlending} -i pipe:";
 
-                string inputEffect;
+                var inputEffect = string.Empty;
                 if (actualFramesBlending > 1) inputEffect = $"-vf tblend=all_mode=average -r {FPS}";
                 else if (MotionInterpolation) inputEffect = $"-vf minterpolate=fps={FPS * 4}";
-                else inputEffect = null;
 
-                var encoderSpecific = "";
+                var encoderSpecific = string.Empty;
 
                 switch (Encoder)
                 {
@@ -40,13 +35,14 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                         break;
                 }
                 
-                string outputParameters = $"-c:v {Encoder} -vf \"vflip\" {encoderSpecific} -pix_fmt yuv420p -preset {Preset} {OutputPath}";
-
-                return inputParameters + (inputEffect != null? (" " + inputEffect) : "") + " " + outputParameters;
+                var outputParameters = $"-c:v {Encoder} -vf \"vflip\" {encoderSpecific} -pix_fmt yuv420p -preset {Preset} {OutputPath}";
+                return inputParameters + (string.IsNullOrWhiteSpace(inputEffect)? (" " + inputEffect) : "") + " " + outputParameters;
             }
         }
 
         public override bool CanWrite => InputStream is not null && InputStream.CanWrite;
+        
+        public ExternalFFmpegEncoder(EncoderConfig config) : base(config) { }
 
         protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
         {

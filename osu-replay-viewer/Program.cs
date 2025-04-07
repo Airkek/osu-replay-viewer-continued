@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
+using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Timing;
 
 namespace osu_replay_renderer_netcore
@@ -35,6 +36,8 @@ namespace osu_replay_renderer_netcore
             OptionDescription recordFPS;
             OptionDescription recordAudioOutput;
 
+            OptionDescription ffmpegType;
+            OptionDescription ffmpegPath;
             OptionDescription ffmpegPreset;
             OptionDescription ffmpegFramesBlending;
             OptionDescription ffmpegMotionInterpolation;
@@ -160,6 +163,23 @@ namespace osu_replay_renderer_netcore
                     },
 
                     // FFmpeg options
+                    ffmpegType = new()
+                    {
+                        Name = "FFmpeg type",
+                        Description = "Which type of ffmpeg should we use",
+                        DoubleDashes = new[] { "ffmpeg-type" },
+                        SingleDash = new[] { "FT" },
+                        Parameters = new[] { "Type (external/bindings)" },
+                        ProcessedParameters = new[] { "pipe" }
+                    },
+                    ffmpegPath = new()
+                    {
+                        Name = "FFmpeg folder path",
+                        Description = "Path to directory with ffmpeg binary/libs",
+                        DoubleDashes = new[] { "ffmpeg-path" },
+                        SingleDash = new[] { "FP" },
+                        Parameters = new[] { "Path" },
+                    },
                     ffmpegPreset = new()
                     {
                         Name = "FFmpeg H264 Encoding Preset",
@@ -191,7 +211,7 @@ namespace osu_replay_renderer_netcore
                         Description = "Set video encoder for FFmpeg. 'ffmpeg -encoders' for the list",
                         DoubleDashes = new[] { "ffmpeg-encoder" },
                         SingleDash = new[] { "FENC" },
-                        Parameters = new[] { "Encoder = libx264" },
+                        Parameters = new[] { "Encoder (libx264/h264_nvenc/h264_qsv/h264_amf/h264_videotoolbox)" },
                         ProcessedParameters = new[] { "libx264" }
                     },
                     ffmpegBitrate = new()
@@ -307,7 +327,8 @@ namespace osu_replay_renderer_netcore
                         Width = ParseIntOrThrow(recordResolution[0]),
                         Height = ParseIntOrThrow(recordResolution[1])
                     };
-                    recordHost.Encoder = new CustomHosts.Record.ExternalFFmpegEncoder()
+
+                    var config = new EncoderConfig
                     {
                         FPS = fps,
                         Resolution = recordHost.Resolution,
@@ -320,6 +341,22 @@ namespace osu_replay_renderer_netcore
                         FramesBlending = blending,
                         MotionInterpolation = ffmpegMotionInterpolation.Triggered,
                     };
+
+                    if (ffmpegPath.Triggered)
+                    {
+                        config.FFmpegPath = ffmpegPath[0];
+                    }
+
+                    switch (ffmpegType[0])
+                    {
+                        case "pipe":
+                        case "external":
+                            recordHost.Encoder = new ExternalFFmpegEncoder(config);
+                            break;
+                        case "bindings":
+                            recordHost.Encoder = new FFmpegAutoGenEncoder(config);
+                            break;
+                    }
                     recordHost.AudioOutput = audioOutput;
                     recordHost.StartRecording();
                 }

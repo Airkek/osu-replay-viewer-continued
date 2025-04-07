@@ -16,6 +16,11 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         public override bool CanWrite => _formatContext != null && _formatContext->pb != null;
 
+        public FFmpegAutoGenEncoder(EncoderConfig config) : base(config)
+        {
+            ffmpeg.RootPath = FFmpegPath;
+        }
+
         protected override void _startInternal()
         {
             ffmpeg.avformat_network_init();

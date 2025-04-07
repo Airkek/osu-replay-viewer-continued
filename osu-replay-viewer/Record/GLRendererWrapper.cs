@@ -16,6 +16,7 @@ public class GLRendererWrapper : RenderWrapper
     private static readonly FieldInfo GLRenderer_openGLSurfaceField = GLRendererType.GetField("openGLSurface",
         BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
+    private readonly IGraphicsSurface surface;
     private readonly IOpenGLGraphicsSurface openGLSurface;
 
     public GLRendererWrapper(IRenderer renderer, Size desiredSize) : base(desiredSize)
@@ -25,15 +26,16 @@ public class GLRendererWrapper : RenderWrapper
 
         var graphicsSurfaceObj = GLRenderer_openGLSurfaceField.GetValue(renderer);
         if (graphicsSurfaceObj is null) throw new Exception("graphicsSurface is null");
-        if (graphicsSurfaceObj is not IOpenGLGraphicsSurface obj)
+        if (graphicsSurfaceObj is not IOpenGLGraphicsSurface or not IGraphicsSurface)
             throw new NotSupportedException("graphicsSurface has unexpected type");
 
-        openGLSurface = obj;
+        surface = (IGraphicsSurface)graphicsSurfaceObj;
+        openGLSurface = (IOpenGLGraphicsSurface)graphicsSurfaceObj;
     }
 
     public override unsafe void WriteFrame(EncoderBase encoder)
     {
-        var size = ((IGraphicsSurface)openGLSurface).GetDrawableSize();
+        var size = surface.GetDrawableSize();
         if (size.Width != DesiredSize.Width || size.Height != DesiredSize.Height) return;
 
         var bufferSize = DesiredSize.Width * DesiredSize.Height * 3;
@@ -66,10 +68,6 @@ public class GLRendererWrapper : RenderWrapper
 
             // Map PBO to client memory
             GL.BindBuffer(BufferTarget.PixelPackBuffer, pbo);
-
-            // var dataPtr = GL.glMapBuffer(
-            //     BufferTarget.PixelPackBuffer,
-            //     BufferAccess.ReadOnly);
 
             var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer,
                 IntPtr.Zero,

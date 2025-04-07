@@ -3,24 +3,46 @@ using System.Drawing;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record;
 
+public struct EncoderConfig
+{
+    public int FPS;
+    public Size Resolution;
+    public string OutputPath;
+    public string Preset;
+    public string Encoder;
+    public string Bitrate;
+    public bool MotionInterpolation;
+    public int FramesBlending;
+    public string FFmpegPath;
+}
+
 public abstract class EncoderBase
 {
     private readonly object WriteLocker = new();
-    public int FPS { get; set; } = 60;
-    public Size Resolution { get; set; }
-    public string OutputPath { get; set; } = "output.mp4";
-    public string Preset { get; set; } = "slow";
-    public string Encoder { get; set; } = "libx264";
-    public string Bitrate { get; set; } = "100M";
-    public bool MotionInterpolation { get; set; } = false;
-    
+
+    public readonly int FPS;
+    public readonly Size Resolution;
+    public readonly string OutputPath;
+    public readonly string Preset;
+    public readonly string Encoder;
+    public readonly string Bitrate;
+    public readonly bool MotionInterpolation;
+    public readonly int FramesBlending;
+    public readonly string FFmpegPath; 
     public abstract bool CanWrite { get; }
 
-    /// <summary>
-    /// Blend multiple frames. Values that's lower than or equals to 1 will disable frames
-    /// blending. Frames blending makes encoding process way slower
-    /// </summary>
-    public int FramesBlending { get; set; } = 1;
+    public EncoderBase(EncoderConfig config)
+    {
+        FPS = config.FPS;
+        Resolution = config.Resolution;
+        OutputPath = config.OutputPath;
+        Preset = config.Preset;
+        Encoder = config.Encoder;
+        Bitrate = config.Bitrate;
+        MotionInterpolation = config.MotionInterpolation;
+        FramesBlending = config.FramesBlending;
+        FFmpegPath = config.FFmpegPath;
+    }
 
     protected abstract void _writeFrameInternal(ReadOnlySpan<byte> frame);
     protected abstract void _finishInternal();
