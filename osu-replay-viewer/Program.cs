@@ -278,20 +278,29 @@ namespace osu_replay_renderer_netcore
                 if (recordMode.Triggered)
                 {
                     if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, recordOutput[0])) return;
-                    var audioOutput = recordAudioOutput.ProcessedParameters.Length > 0 ? recordAudioOutput[0] : (recordOutput[0] + ".wav");
-                    if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, audioOutput)) return;
 
-                    int fps = ParseIntOrThrow(recordFPS[0]);
-                    int blending = ParseIntOrThrow(ffmpegFramesBlending[0]);
+                    string audioOutput = null;
+                    if (patched)
+                    {
+                        audioOutput = recordAudioOutput.ProcessedParameters.Length > 0 ? recordAudioOutput[0] : (recordOutput[0] + ".wav");
+                        if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, audioOutput)) return;
+                    }
+
+                    var fps = ParseIntOrThrow(recordFPS[0]);
+                    var blending = ParseIntOrThrow(ffmpegFramesBlending[0]);
                     
                     var recordClock = new RecordClock(fps * blending);
-                    ClockPatcher.OnStopwatchClockSetAsSource += clock =>
+                    if (patched)
                     {
-                        clock.ChangeSource(new WrappedClock(recordClock, clock.Source as StopwatchClock));
-                    };
+                        ClockPatcher.OnStopwatchClockSetAsSource += clock =>
+                        {
+                            clock.ChangeSource(new WrappedClock(recordClock, clock.Source as StopwatchClock));
+                        };
+                    }
                     var recordHost = new ReplayRecordGameHost("osu", recordClock);
                     host = recordHost;
                     recordHost.IsFinishFramePatched = patched;
+                    recordHost.IsAudioPatched = patched;
 
                     recordHost.Resolution = new Size
                     {

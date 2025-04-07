@@ -404,11 +404,6 @@ namespace osu_replay_renderer_netcore
                     {
                         Scheduler.AddDelayed(() =>
                         {
-                            if (Host is ReplayRecordGameHost recordHost) recordHost.UsingEncoder = false;
-                            if (Host is ReplayHeadlessGameHost headlessHost && headlessHost.OutputAudioToFile != null) headlessHost.UsingAudioRecorder = false;
-                        }, 10000);
-                        Scheduler.AddDelayed(() =>
-                        {
                             if (Host is ReplayRecordGameHost recordHost)
                             {
                                 lock (recordHost.Encoder.WriteLocker)
@@ -416,12 +411,16 @@ namespace osu_replay_renderer_netcore
                                     recordHost.Encoder.Finish();
                                 }
                                 recordHost.Timer.Stop();
-                                var buff = recordHost.FinishAudio();
+
+                                if (recordHost.IsAudioPatched)
+                                {
+                                    var buff = recordHost.FinishAudio();
                                 
-                                var stream = new FileStream(recordHost.AudioOutput, FileMode.OpenOrCreate);
-                                buff.WriteWave(stream);
-                                stream.Close();
-                                recordHost.Encoder.WriteAudio(recordHost.AudioOutput);
+                                    var stream = new FileStream(recordHost.AudioOutput, FileMode.OpenOrCreate);
+                                    buff.WriteWave(stream);
+                                    stream.Close();
+                                    recordHost.Encoder.WriteAudio(recordHost.AudioOutput);
+                                }
                                 Logger.Log($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}", LoggingTarget.Runtime, LogLevel.Important);
                             }
                             Exit();

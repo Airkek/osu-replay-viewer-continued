@@ -48,6 +48,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public ExternalFFmpegEncoder Encoder { get; set; }
         public bool UsingEncoder { get; set; } = true;
         public bool IsFinishFramePatched { get; set; } = false;
+        public bool IsAudioPatched { get; set; } = false;
 
         private RenderWrapper wrapper;
 
@@ -61,7 +62,11 @@ namespace osu_replay_renderer_netcore.CustomHosts
         })
         {
             recordClock = clock;
-            RenderPatcher.OnDraw += OnDraw;
+            if (IsFinishFramePatched)
+            {
+                RenderPatcher.OnDraw += OnDraw;
+            }
+
             PrepareAudioRendering();
         }
 
@@ -76,6 +81,10 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private void PrepareAudioRendering()
         {
+            if (!IsAudioPatched)
+            {
+                return;
+            }
             AudioPatcher.OnTrackPlay += track =>
             {
                 //Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
@@ -124,6 +133,10 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         public AudioBuffer FinishAudio()
         {
+            if (!IsAudioPatched)
+            {
+                return null;
+            }
             AudioBuffer buff = AudioBuffer.FromSeconds(new AudioFormat
             {
                 Channels = 2,
@@ -225,17 +238,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 wrapper.WriteScreenshotToStream(Encoder.InputStream);
                 recordClock.CurrentFrame++;
             }
-           
-            // if (previousScreenshotTask != null)
-            // {
-            //     Task.WaitAll(previousScreenshotTask);
-            //     Image<Rgba32> ss = previousScreenshotTask.Result;
-            //     if (UsingEncoder && Encoder != null)
-            //     {
-            //         if (ss.Width == Encoder.Resolution.Width && ss.Height == Encoder.Resolution.Height) Encoder.WriteFrame(ss);
-            //     }
-            // }
-            // previousScreenshotTask = TakeScreenshotAsync();
         }
     }
 }
