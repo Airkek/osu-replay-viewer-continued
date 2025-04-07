@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using FFmpeg.AutoGen;
 using System.Collections.Generic;
 
@@ -21,8 +22,12 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             ffmpeg.RootPath = FFmpegPath;
         }
 
+
+        private byte[] _pixelBuffer;
         protected override void _startInternal()
         {
+            _pixelBuffer = ArrayPool<byte>.Shared.Rent(Resolution.Width * Resolution.Height * 3); // RGB24
+            
             ffmpeg.avformat_network_init();
 
             // Allocate output format context
@@ -107,10 +112,16 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
         {
-            fixed (byte* srcPtr = frame)
+            fixed (byte* srcPtr = _pixelBuffer)
             {
+                fixed (byte* framePtr = frame)
+                {
+                    // For some reason sws_scale crashes with ACCESS_VIOLATION when passing mapped PBO pointer :(
+                    // TODO: find a way to avoid copying this shit
+                    Buffer.MemoryCopy(framePtr, srcPtr, frame.Length, frame.Length);
+                }
+                
                 int srcStride = Resolution.Width * 3;
-                bool x;
                 byte*[] srcData = { srcPtr + (Resolution.Height - 1) * srcStride, null, null, null };
                 int[] srcStrideArray = { -srcStride, 0, 0, 0 };
 
@@ -152,6 +163,10 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         protected override void _finishInternal()
         {
+            if (_pixelBuffer is not null)
+            {
+                ArrayPool<byte>.Shared.Return(_pixelBuffer);
+            }
             // Flush encoder
             ffmpeg.avcodec_send_frame(_codecContext, null);
 
