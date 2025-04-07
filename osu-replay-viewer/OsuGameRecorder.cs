@@ -225,7 +225,8 @@ namespace osu_replay_renderer_netcore
                         try
                         {
                             score = decoder.Parse(stream);
-                            score.ScoreInfo.BeatmapInfo = BeatmapManager.QueryBeatmap(v => v.OnlineID == score.ScoreInfo.BeatmapInfo.OnlineID);
+                            var mapId = score.ScoreInfo.BeatmapInfo.OnlineID;
+                            score.ScoreInfo.BeatmapInfo = BeatmapManager.QueryBeatmap(v => v.OnlineID == mapId);
                         }
                         catch (LegacyScoreDecoder.BeatmapNotFoundException e)
                         {

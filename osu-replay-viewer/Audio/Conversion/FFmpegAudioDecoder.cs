@@ -16,6 +16,8 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
     /// </summary>
     public static class FFmpegAudioDecoder
     {
+        public static string Exec = "ffmpeg";
+        
         /// <summary>
         /// Decode given input to PCM signed 16-bit (which is stored in the
         /// buffer).
@@ -31,7 +33,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "ffmpeg",
+                    FileName = Exec,
                     Arguments = args,
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true

@@ -14,6 +14,7 @@ public struct EncoderConfig
     public bool MotionInterpolation;
     public int FramesBlending;
     public string FFmpegPath;
+    public string FFmpegExec;
 }
 
 public abstract class EncoderBase
@@ -29,6 +30,7 @@ public abstract class EncoderBase
     public readonly bool MotionInterpolation;
     public readonly int FramesBlending;
     public readonly string FFmpegPath; 
+    public readonly string FFmpegExec; 
     public abstract bool CanWrite { get; }
 
     public EncoderBase(EncoderConfig config)
@@ -42,6 +44,7 @@ public abstract class EncoderBase
         MotionInterpolation = config.MotionInterpolation;
         FramesBlending = config.FramesBlending;
         FFmpegPath = config.FFmpegPath;
+        FFmpegExec = config.FFmpegExec;
     }
 
     protected abstract void _writeFrameInternal(ReadOnlySpan<byte> frame);

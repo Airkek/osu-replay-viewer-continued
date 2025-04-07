@@ -47,8 +47,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 720 };
         public EncoderBase Encoder { get; set; }
         public bool UsingEncoder { get; set; } = true;
-        public bool IsFinishFramePatched { get; set; } = false;
-        public bool IsAudioPatched { get; set; } = false;
+        public readonly bool IsFinishFramePatched;
+        public readonly bool IsAudioPatched;
 
         private RenderWrapper wrapper;
 
@@ -56,11 +56,14 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         public ulong Frames => recordClock.CurrentFrame;
 
-        public ReplayRecordGameHost(string gameName, RecordClock clock) : base(gameName, new HostOptions
+        public ReplayRecordGameHost(string gameName, RecordClock clock, bool patchesApplied) : base(gameName, new HostOptions
         {
             //BindIPC = false
         })
         {
+            IsFinishFramePatched = patchesApplied;
+            IsAudioPatched = patchesApplied;
+            
             recordClock = clock;
             if (IsFinishFramePatched)
             {

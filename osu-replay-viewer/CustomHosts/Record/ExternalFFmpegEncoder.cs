@@ -60,13 +60,13 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         protected override void _startInternal()
         {
             Console.WriteLine("Starting FFmpeg process with arguments: " + FFmpegArguments);
-            FFmpeg = new Process()
+            FFmpeg = new Process
             {
                 StartInfo =
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "ffmpeg",
+                    FileName = FFmpegExec,
                     Arguments = FFmpegArguments,
                     RedirectStandardInput = true
                 }
@@ -77,13 +77,13 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         public void WriteAudio(string file)
         {
-            var ffmpeg = new Process()
+            var ffmpeg = new Process
             {
                 StartInfo =
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "ffmpeg",
+                    FileName = FFmpegExec,
                     Arguments = $"-y -i {OutputPath} -i {file} -c:v copy -c:a aac {OutputPath}.audio.mp4",
                     RedirectStandardInput = false
                 }

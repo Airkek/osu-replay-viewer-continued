@@ -8,6 +8,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Timing;
@@ -37,7 +38,8 @@ namespace osu_replay_renderer_netcore
             OptionDescription recordAudioOutput;
 
             OptionDescription ffmpegType;
-            OptionDescription ffmpegPath;
+            OptionDescription ffmpegLibPath;
+            OptionDescription ffmpegExec;
             OptionDescription ffmpegPreset;
             OptionDescription ffmpegFramesBlending;
             OptionDescription ffmpegMotionInterpolation;
@@ -172,12 +174,20 @@ namespace osu_replay_renderer_netcore
                         Parameters = new[] { "Type (external/bindings)" },
                         ProcessedParameters = new[] { "pipe" }
                     },
-                    ffmpegPath = new()
+                    ffmpegLibPath = new()
                     {
                         Name = "FFmpeg folder path",
                         Description = "Path to directory with ffmpeg binary/libs",
                         DoubleDashes = new[] { "ffmpeg-path" },
-                        SingleDash = new[] { "FP" },
+                        SingleDash = new[] { "FLP" },
+                        Parameters = new[] { "Path" },
+                    },
+                    ffmpegExec = new()
+                    {
+                        Name = "FFmpeg executable path",
+                        Description = "Path to ffmpeg executable binary",
+                        DoubleDashes = new[] { "ffmpeg-exec" },
+                        SingleDash = new[] { "FEXE" },
                         Parameters = new[] { "Path" },
                     },
                     ffmpegPreset = new()
@@ -317,10 +327,8 @@ namespace osu_replay_renderer_netcore
                             clock.ChangeSource(new WrappedClock(recordClock, clock.Source as StopwatchClock));
                         };
                     }
-                    var recordHost = new ReplayRecordGameHost("osu", recordClock);
+                    var recordHost = new ReplayRecordGameHost("osu", recordClock, patched);
                     host = recordHost;
-                    recordHost.IsFinishFramePatched = patched;
-                    recordHost.IsAudioPatched = patched;
 
                     recordHost.Resolution = new Size
                     {
@@ -342,9 +350,15 @@ namespace osu_replay_renderer_netcore
                         MotionInterpolation = ffmpegMotionInterpolation.Triggered,
                     };
 
-                    if (ffmpegPath.Triggered)
+                    if (ffmpegLibPath.Triggered)
                     {
-                        config.FFmpegPath = ffmpegPath[0];
+                        config.FFmpegPath = ffmpegLibPath[0];
+                    }
+                    
+                    if (ffmpegExec.Triggered)
+                    {
+                        config.FFmpegExec = ffmpegExec[0];
+                        FFmpegAudioDecoder.Exec = ffmpegExec[0];
                     }
 
                     switch (ffmpegType[0])
