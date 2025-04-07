@@ -48,7 +48,6 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                     Arguments = args.ToString(),
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
-                    RedirectStandardError = true,
                     CreateNoWindow = true
                 }
             };
@@ -60,11 +59,6 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             outputStream.Position = 0;
             
             ffmpeg.WaitForExit();
-
-            if (ffmpeg.ExitCode != 0)
-            {
-                throw new Exception($"FFmpeg error: {ffmpeg.StandardError.ReadToEnd()}");
-            }
 
             int sampleCount = (int)outputStream.Length / 2;
             var buffer = new AudioBuffer(
