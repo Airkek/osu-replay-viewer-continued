@@ -413,7 +413,7 @@ namespace osu_replay_renderer_netcore
                             {
                                 lock (recordHost.Encoder.WriteLocker)
                                 {
-                                    recordHost.Encoder.InputStream.Close();
+                                    recordHost.Encoder.Finish();
                                 }
                                 recordHost.Timer.Stop();
                                 var buff = recordHost.FinishAudio();
@@ -422,8 +422,6 @@ namespace osu_replay_renderer_netcore
                                 buff.WriteWave(stream);
                                 stream.Close();
                                 recordHost.Encoder.WriteAudio(recordHost.AudioOutput);
-
-                                recordHost.Encoder = null;
                                 Logger.Log($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}", LoggingTarget.Runtime, LogLevel.Important);
                             }
                             Exit();

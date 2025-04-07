@@ -191,17 +191,18 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private void OnDraw()
         {
-            if (Encoder?.InputStream is null || !Encoder.InputStream.CanWrite)
-            {
-                return;
-            }
-            if (!Timer.IsRunning)
-            {
-                Timer.Start();
-                Logger.Log("Render started", LoggingTarget.Runtime, LogLevel.Important);
-            }
             lock (Encoder.WriteLocker)
             {
+                if (Encoder?.InputStream is null || !Encoder.InputStream.CanWrite)
+                {
+                    return;
+                }
+                
+                if (!Timer.IsRunning)
+                {
+                    Timer.Start();
+                    Logger.Log("Render started", LoggingTarget.Runtime, LogLevel.Important);
+                }
                 wrapper.WriteScreenshotToStream(Encoder.InputStream);
                 recordClock.CurrentFrame++;
             }

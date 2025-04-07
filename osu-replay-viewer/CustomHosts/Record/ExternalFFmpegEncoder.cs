@@ -89,6 +89,12 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             InputStream = FFmpeg.StandardInput.BaseStream;
         }
 
+        public void Finish()
+        {
+            InputStream.Close();
+            InputStream = null;
+        }
+
         public void WriteAudio(string file)
         {
             var ffmpeg = new Process()
