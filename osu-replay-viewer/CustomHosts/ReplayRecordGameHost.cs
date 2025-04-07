@@ -44,8 +44,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
         protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => CrossPlatform.GetWindow(preferredSurface);
         protected override IEnumerable<InputHandler> CreateAvailableInputHandlers() => new InputHandler[] { };
 
-        public System.Drawing.Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 720 };
-        public ExternalFFmpegEncoder Encoder { get; set; }
+        public Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 720 };
+        public EncoderBase Encoder { get; set; }
         public bool UsingEncoder { get; set; } = true;
         public bool IsFinishFramePatched { get; set; } = false;
         public bool IsAudioPatched { get; set; } = false;
@@ -72,7 +72,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         public void StartRecording()
         {
-            Encoder.StartFFmpeg();
+            Encoder.Start();
         }
 
         public AudioJournal AudioJournal { get; set; } = new();
@@ -219,25 +219,18 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private void OnDraw()
         {
-            if (!UsingEncoder || Encoder is null)
+            if (!UsingEncoder || Encoder is null || !Encoder.CanWrite)
             {
                 return;
             }
-            lock (Encoder.WriteLocker)
-            {
-                if (Encoder?.InputStream is null || !Encoder.InputStream.CanWrite)
-                {
-                    return;
-                }
                 
-                if (!Timer.IsRunning)
-                {
-                    Timer.Start();
-                    Logger.Log("Render started", LoggingTarget.Runtime, LogLevel.Important);
-                }
-                wrapper.WriteScreenshotToStream(Encoder.InputStream);
-                recordClock.CurrentFrame++;
+            if (!Timer.IsRunning)
+            {
+                Timer.Start();
+                Logger.Log("Render started", LoggingTarget.Runtime, LogLevel.Important);
             }
+            wrapper.WriteFrame(Encoder);
+            recordClock.CurrentFrame++;
         }
     }
 }

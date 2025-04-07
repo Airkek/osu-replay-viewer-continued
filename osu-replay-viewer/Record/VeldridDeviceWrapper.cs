@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Drawing;
-using System.IO;
 using System.Reflection;
-using System.Threading;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Platform;
@@ -80,7 +78,7 @@ public class VeldridDeviceWrapper : RenderWrapper
     public ResourceFactory Factory
         => Device.ResourceFactory;
 
-    public override unsafe void WriteScreenshotToStream(Stream stream)
+    public override unsafe void WriteFrame(EncoderBase encoder)
     {
         var texture = Device.SwapchainFramebuffer.ColorTargets[0].Target;
         
@@ -139,7 +137,7 @@ public class VeldridDeviceWrapper : RenderWrapper
                             {
                                 // Copy data directly from mapped memory to stream
                                 var span = new ReadOnlySpan<byte>(dataPtr, bufferSize);
-                                stream.Write(span);
+                                encoder.WriteFrame(span);
                             }
                             finally
                             {

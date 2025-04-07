@@ -1,5 +1,5 @@
 ﻿using System.Drawing;
-using System.IO;
+using osu_replay_renderer_netcore.CustomHosts.Record;
 
 namespace osu_replay_renderer_netcore.Record;
 
@@ -11,5 +11,5 @@ public abstract class RenderWrapper
     {
         DesiredSize = desiredSize;
     }
-    public abstract void WriteScreenshotToStream(Stream stream);
+    public abstract void WriteFrame(EncoderBase encoder);
 }

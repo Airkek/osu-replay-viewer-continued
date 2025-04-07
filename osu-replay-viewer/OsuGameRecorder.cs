@@ -5,16 +5,13 @@ using osu.Framework.Graphics.Containers;
 using osu.Framework.Input;
 using osu.Framework.Platform;
 using osu.Framework.Screens;
-using osu.Framework.Threading;
 using osu.Framework.Timing;
 using osu.Game;
 using osu.Game.Beatmaps;
 using osu.Game.Database;
 using osu.Game.Graphics.Containers;
-using osu.Game.Graphics.Cursor;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
-using osu.Game.Rulesets.Osu;
 using osu.Game.Scoring;
 using osu.Game.Scoring.Legacy;
 using osu.Game.Screens.Play;
@@ -29,16 +26,11 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
-using osu_replay_renderer_netcore.Patching;
-using osu.Framework.Audio.Track;
+using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Logging;
 using osu.Game.Configuration;
-using osu.Game.IO.Archives;
-using osu.Game.Rulesets.Catch.UI;
 using osu.Game.Rulesets.Mania.Configuration;
 using osu.Game.Rulesets.Osu.Configuration;
-using osu.Game.Rulesets.UI;
-using osu.Game.Screens;
 using osu.Game.Skinning;
 using osu.Game.Tests.Rulesets;
 
@@ -406,10 +398,7 @@ namespace osu_replay_renderer_netcore
                         {
                             if (Host is ReplayRecordGameHost recordHost)
                             {
-                                lock (recordHost.Encoder.WriteLocker)
-                                {
-                                    recordHost.Encoder.Finish();
-                                }
+                                recordHost.Encoder.Finish();
                                 recordHost.Timer.Stop();
 
                                 if (recordHost.IsAudioPatched)
@@ -419,7 +408,10 @@ namespace osu_replay_renderer_netcore
                                     var stream = new FileStream(recordHost.AudioOutput, FileMode.OpenOrCreate);
                                     buff.WriteWave(stream);
                                     stream.Close();
-                                    recordHost.Encoder.WriteAudio(recordHost.AudioOutput);
+                                    if (recordHost.Encoder is ExternalFFmpegEncoder enc)
+                                    {
+                                        enc.WriteAudio(recordHost.AudioOutput);
+                                    }
                                 }
                                 Logger.Log($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}", LoggingTarget.Runtime, LogLevel.Important);
                             }

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Drawing;
-using System.IO;
 using System.Reflection;
+using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Platform;
 using osuTK.Graphics.ES30;
@@ -31,7 +31,7 @@ public class GLRendererWrapper : RenderWrapper
         openGLSurface = obj;
     }
 
-    public override unsafe void WriteScreenshotToStream(Stream stream)
+    public override unsafe void WriteFrame(EncoderBase encoder)
     {
         var size = ((IGraphicsSurface)openGLSurface).GetDrawableSize();
         if (size.Width != DesiredSize.Width || size.Height != DesiredSize.Height) return;
@@ -81,7 +81,7 @@ public class GLRendererWrapper : RenderWrapper
                 {
                     // Copy data directly from mapped memory to stream
                     var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), bufferSize);
-                    stream.Write(span);
+                    encoder.WriteFrame(span);
                 }
                 finally
                 {

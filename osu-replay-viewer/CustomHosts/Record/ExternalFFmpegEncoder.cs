@@ -1,43 +1,18 @@
-﻿using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.PixelFormats;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-using osu_replay_renderer_netcore.Audio;
-using SixLabors.ImageSharp.Advanced;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record
 {
     /// <summary>
     /// FFmpeg video encoder with actual FFmpeg executable instead of FFmpeg.AutoGen
     /// </summary>
-    public class ExternalFFmpegEncoder
+    public class ExternalFFmpegEncoder : EncoderBase
     {
-        public readonly object WriteLocker = new();
-        public Process FFmpeg { get; private set; }
-        public Stream InputStream { get; private set; }
-        public int FPS { get; set; } = 60;
-        public System.Drawing.Size Resolution { get; set; }
-        public string OutputPath { get; set; } = "output.mp4";
-        public string Preset { get; set; } = "slow";
-        public string Encoder { get; set; } = "libx264";
-        public string Bitrate { get; set; } = "100M";
-        public bool MotionInterpolation { get; set; } = false;
-
-        /// <summary>
-        /// Blend multiple frames. Values that's lower than or equals to 1 will disable frames
-        /// blending. Frames blending makes encoding process way slower
-        /// </summary>
-        public int FramesBlending { get; set; } = 1;
-
-        public string FFmpegArguments
+        
+        private Process FFmpeg { get; set; }
+        private Stream InputStream { get; set; }
+        private string FFmpegArguments
         {
             get
             {
@@ -71,7 +46,22 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             }
         }
 
-        public void StartFFmpeg()
+        public override bool CanWrite => InputStream is not null && InputStream.CanWrite;
+
+        protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
+        {
+            InputStream.Write(frame);
+        }
+
+        protected override void _finishInternal()
+        {
+            InputStream.Close();
+            InputStream = null;
+            FFmpeg.WaitForExit();
+            FFmpeg = null;
+        }
+
+        protected override void _startInternal()
         {
             Console.WriteLine("Starting FFmpeg process with arguments: " + FFmpegArguments);
             FFmpeg = new Process()
@@ -87,12 +77,6 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             };
             FFmpeg.Start();
             InputStream = FFmpeg.StandardInput.BaseStream;
-        }
-
-        public void Finish()
-        {
-            InputStream.Close();
-            InputStream = null;
         }
 
         public void WriteAudio(string file)
