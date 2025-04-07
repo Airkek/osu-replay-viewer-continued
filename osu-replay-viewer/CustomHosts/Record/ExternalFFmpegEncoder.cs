@@ -80,7 +80,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "C:\\ffmpeg\\ffmpeg.exe",
+                    FileName = "ffmpeg",
                     Arguments = FFmpegArguments,
                     RedirectStandardInput = true
                 }
@@ -103,7 +103,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 {
                     UseShellExecute = false,
                     CreateNoWindow = false,
-                    FileName = "C:\\ffmpeg\\ffmpeg.exe",
+                    FileName = "ffmpeg",
                     Arguments = $"-y -i {OutputPath} -i {file} -c:v copy -c:a aac {OutputPath}.audio.mp4",
                     RedirectStandardInput = false
                 }
