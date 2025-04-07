@@ -164,7 +164,7 @@ namespace osu_replay_renderer_netcore
                 Console.WriteLine("--------------------");
                 Console.WriteLine("Listing all available skins:");
 
-                RealmAccess realm = (RealmAccess)typeof(SkinManager).GetField("realm", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(SkinManager);
+                RealmAccess realm = (RealmAccess) typeof(SkinManager).GetProperty("Realm", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(SkinManager);
 
                 foreach (SkinInfo info in realm.Run(r => r.All<SkinInfo>().Detach()))
                 {
