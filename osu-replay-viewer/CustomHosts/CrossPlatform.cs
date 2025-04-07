@@ -37,13 +37,13 @@ namespace osu_replay_renderer_netcore.CustomHosts
             switch (RuntimeInfo.OS)
             {
                 case RuntimeInfo.Platform.Windows:
-                    typeName = "osu.Framework.Platform.Windows.SDL2WindowsWindow";
+                    typeName = FrameworkEnvironment.UseSDL3 ? "osu.Framework.Platform.Windows.SDL3WindowsWindow" : "osu.Framework.Platform.Windows.SDL2WindowsWindow";
                     break;
                 case RuntimeInfo.Platform.Linux:
-                    typeName = "osu.Framework.Platform.Linux.SDL2LinuxWindow";
+                    typeName = FrameworkEnvironment.UseSDL3 ? "osu.Framework.Platform.Linux.SDL3LinuxWindow" : "osu.Framework.Platform.Linux.SDL2LinuxWindow";
                     break;
                 case RuntimeInfo.Platform.macOS:
-                    typeName = "osu.Framework.Platform.MacOS.SDL2MacOSWindow";
+                    typeName = FrameworkEnvironment.UseSDL3 ? "osu.Framework.Platform.MacOS.SDL3MacOSWindow" : "osu.Framework.Platform.MacOS.SDL2MacOSWindow";
                     break;
         
                 default: throw new InvalidOperationException($"Unknown platform: {Enum.GetName(typeof(RuntimeInfo.Platform), RuntimeInfo.OS)}");
