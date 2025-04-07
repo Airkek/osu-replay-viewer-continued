@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FFmpeg.AutoGen" Version="7.1.1" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="6.1.0.1" />
     <PackageReference Include="Lib.Harmony" Version="2.3.5" />
     <PackageReference Include="ppy.osu.Game" Version="2025.321.0" />
     <PackageReference Include="ppy.osu.Game.Rulesets.Catch" Version="2025.321.0" />
