@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record;
 
@@ -6,7 +7,7 @@ public abstract class EncoderBase
 {
     private readonly object WriteLocker = new();
     public int FPS { get; set; } = 60;
-    public System.Drawing.Size Resolution { get; set; }
+    public Size Resolution { get; set; }
     public string OutputPath { get; set; } = "output.mp4";
     public string Preset { get; set; } = "slow";
     public string Encoder { get; set; } = "libx264";
