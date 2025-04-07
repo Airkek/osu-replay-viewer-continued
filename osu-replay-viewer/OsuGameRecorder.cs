@@ -294,8 +294,22 @@ namespace osu_replay_renderer_netcore
             
             if (DecodeAudio)
             {
+                double speed = 1;
+                double pitch = 1;
+                foreach (var mod in score.ScoreInfo.Mods)
+                {
+                    if (mod is ModRateAdjust ra)
+                    {
+                        speed = ra.SpeedChange.Value;
+
+                        if (ra is ModDaycore or ModNightcore or ModDoubleTime { AdjustPitch.Value: true } or ModHalfTime { AdjustPitch.Value: true })
+                        {
+                            pitch = speed;
+                        } 
+                    }
+                }
                 Logger.Log("Decoding audio...");
-                DecodedAudio = FFmpegAudioDecoder.Decode(GetCurrentBeatmapAudioPath());
+                DecodedAudio = FFmpegAudioDecoder.Decode(GetCurrentBeatmapAudioPath(), speed, pitch);
                 Logger.Log("Audio decoded!");
                 if (Host is ReplayRecordGameHost recordHost) recordHost.AudioTrack = DecodedAudio;
             }

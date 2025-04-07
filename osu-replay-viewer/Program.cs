@@ -364,7 +364,7 @@ namespace osu_replay_renderer_netcore
                     if (ffmpegExec.Triggered)
                     {
                         config.FFmpegExec = ffmpegExec[0];
-                        FFmpegAudioDecoder.Exec = ffmpegExec[0];
+                        FFmpegAudioDecoder.FFmpegExec = ffmpegExec[0];
                     }
 
                     switch (ffmpegType[0])

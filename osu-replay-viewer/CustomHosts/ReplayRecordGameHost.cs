@@ -94,11 +94,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 if (AudioTrack == null) return;
                 AudioJournal.BufferAt(recordClock.CurrentTime / 1000.0, AudioTrack, buff =>
                 {
-                    buff.SoundTouchAll(p =>
-                    {
-                        p.Rate = track.AggregateFrequency.Value;
-                        p.Tempo = track.AggregateTempo.Value;
-                    });
                     //buff.Process(x => x * track.Volume.Value * track.AggregateVolume.Value); // fade-in volume 
                     // TODO: parse volume from settings 
                     return buff;

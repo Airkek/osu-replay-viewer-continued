@@ -2,60 +2,83 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
+using System.Globalization;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace osu_replay_renderer_netcore.Audio.Conversion
 {
-    /// <summary>
-    /// FFmpeg wrapper to decode audio. IO operations are made via child
-    /// process stdio. While osu.Framework already have FFmpeg Autogen, I
-    /// can't find an example of reading packets from container and decode
-    /// it to PCM data (same goes for video encoding)
-    /// </summary>
     public static class FFmpegAudioDecoder
     {
-        public static string Exec = "ffmpeg";
-        
-        /// <summary>
-        /// Decode given input to PCM signed 16-bit (which is stored in the
-        /// buffer).
-        /// <param name="input"></param>
-        /// <returns></returns>
-        public static AudioBuffer Decode(string path, int outChannels = 2, int outRate = 44100)
+        public static string FFmpegExec = "ffmpeg";
+
+        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, int outChannels = 2, int outRate = 44100)
         {
-            var args = $"-i \"{path}\" -f s16le -acodec pcm_s16le -ac {outChannels} -ar {outRate} -";
-            Console.WriteLine("Starting FFmpeg process with arguments: " + args);
-            var FFmpeg = new Process()
+            var filters = new List<string>();
+
+            tempoFactor *= rateFactor;
+            pitchFactor *= rateFactor;
+
+            if (Math.Abs(tempoFactor - 1.0f) > double.Epsilon)
             {
-                StartInfo =
+                filters.Add($"rubberband=tempo={tempoFactor}");
+            }
+
+            if (Math.Abs(pitchFactor - 1.0f) > double.Epsilon)
+            {
+                filters.Add($"rubberband=pitch={pitchFactor.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            var args = new StringBuilder();
+            args.Append($"-i \"{path}\" ");
+
+            if (filters.Count > 0)
+            {
+                args.Append($"-af \"{string.Join(",", filters)}\" ");
+            }
+
+            args.Append($"-f s16le -acodec pcm_s16le -ac {outChannels} -ar {outRate} -");
+
+            Console.WriteLine($"Starting FFmpeg with arguments: {args}");
+
+            using var ffmpeg = new Process
+            {
+                StartInfo = 
                 {
+                    FileName = FFmpegExec,
+                    Arguments = args.ToString(),
                     UseShellExecute = false,
-                    CreateNoWindow = false,
-                    FileName = Exec,
-                    Arguments = args,
-                    RedirectStandardInput = true,
-                    RedirectStandardOutput = true
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
                 }
             };
-            FFmpeg.Start();
 
-            var sOut = FFmpeg.StandardOutput.BaseStream;
-            var memoryStream = new MemoryStream();
-            sOut.CopyTo(memoryStream);
-            memoryStream.Position = 0;
+            ffmpeg.Start();
+            
+            var outputStream = new MemoryStream();
+            ffmpeg.StandardOutput.BaseStream.CopyTo(outputStream);
+            outputStream.Position = 0;
+            
+            ffmpeg.WaitForExit();
 
-            int integers = (int)memoryStream.Length / 2;
-            var buff = new AudioBuffer(new AudioFormat
+            if (ffmpeg.ExitCode != 0)
             {
-                Channels = outChannels,
-                SampleRate = outRate,
-                PCMSize = 2
-            }, integers / outChannels);
-            BinaryReader reader = new(memoryStream);
-            for (int i = 0; i < integers; i++) buff.Data[i] = reader.ReadInt16() / 32768f;
-            return buff;
+                throw new Exception($"FFmpeg error: {ffmpeg.StandardError.ReadToEnd()}");
+            }
+
+            int sampleCount = (int)outputStream.Length / 2;
+            var buffer = new AudioBuffer(
+                new AudioFormat { Channels = outChannels, SampleRate = outRate, PCMSize = 2 },
+                sampleCount / outChannels
+            );
+
+            using var reader = new BinaryReader(outputStream);
+            for (int i = 0; i < sampleCount; i++)
+            {
+                buffer.Data[i] = reader.ReadInt16() / 32768f;
+            }
+
+            return buffer;
         }
     }
 }
