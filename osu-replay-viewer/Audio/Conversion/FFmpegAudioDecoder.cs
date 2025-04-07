@@ -14,7 +14,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
     /// can't find an example of reading packets from container and decode
     /// it to PCM data (same goes for video encoding)
     /// </summary>
-    public class FFmpegAudioDecoder
+    public static class FFmpegAudioDecoder
     {
         /// <summary>
         /// Decode given input to PCM signed 16-bit (which is stored in the
@@ -23,7 +23,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
         /// <returns></returns>
         public static AudioBuffer Decode(string path, int outChannels = 2, int outRate = 44100)
         {
-            var args = $"-i {path} -f s16le -acodec pcm_s16le -ac {outChannels} -ar {outRate} -";
+            var args = $"-i \"{path}\" -f s16le -acodec pcm_s16le -ac {outChannels} -ar {outRate} -";
             Console.WriteLine("Starting FFmpeg process with arguments: " + args);
             var FFmpeg = new Process()
             {
