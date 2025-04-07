@@ -200,6 +200,10 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private void OnDraw()
         {
+            if (!UsingEncoder || Encoder is null)
+            {
+                return;
+            }
             lock (Encoder.WriteLocker)
             {
                 if (Encoder?.InputStream is null || !Encoder.InputStream.CanWrite)
