@@ -12,6 +12,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
     {
         public static IEnumerable<string> GetUserStoragePaths()
         {
+            yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData,
+                Environment.SpecialFolderOption.Create);
             switch (RuntimeInfo.OS)
             {
                 case RuntimeInfo.Platform.Windows:
@@ -19,12 +21,15 @@ namespace osu_replay_renderer_netcore.CustomHosts
                     break;
 
                 case RuntimeInfo.Platform.Linux:
-                case RuntimeInfo.Platform.macOS:
                     // https://github.com/ppy/osu-framework/blob/master/osu.Framework/Platform/Linux/LinuxGameHost.cs
                     string xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
                     if (!string.IsNullOrEmpty(xdg)) yield return xdg;
                     yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".local", "share");
                     // foreach (string path in baseHost.UserStoragePaths) yield return path;
+                    break;
+                
+                case RuntimeInfo.Platform.macOS:
+                    yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
                     break;
 
                 default: throw new InvalidOperationException($"Unknown platform: {Enum.GetName(typeof(RuntimeInfo.Platform), RuntimeInfo.OS)}");
