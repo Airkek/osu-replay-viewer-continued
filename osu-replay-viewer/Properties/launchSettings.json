@@ -2,7 +2,7 @@
   "profiles": {
     "osu-replay-renderer-netcore": {
       "commandName": "Project",
-      "commandLineArgs": "--yes --view online 3523623901 -skin select \"- #Pink Dream - triple stack [triple_stack]\" -FENC h264_nvenc -FPR p7 -FT pipe -FLP C:\\ffmpeg -FEXE C:\\ffmpeg\\ffmpeg.exe -RSL 1920 1080 -FPS 60 -R -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
+      "commandLineArgs": "--yes --mod-override acronyms:DT --mod-override acronyms:HD --mod-override acronyms:FL --view online 3523623901 -skin select \"- #Pink Dream - triple stack [triple_stack]\" -FENC h264_nvenc -FPR p7 -FT pipe -FLP C:\\ffmpeg -FEXE C:\\ffmpeg\\ffmpeg.exe -RSL 1920 1080 -FPS 60 -R -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
     }
   }
 }

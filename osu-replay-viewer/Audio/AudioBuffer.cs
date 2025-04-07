@@ -31,7 +31,7 @@ namespace osu_replay_renderer_netcore.Audio
         /// Buffer data. [c * n] is the channel #1 data, [c * n + 1] is the channel #2
         /// data, etc...
         /// </summary>
-        public readonly float[] Data;
+        public float[] Data { get; private set; }
 
         public AudioBuffer(AudioFormat format, int samples)
         {
@@ -141,7 +141,17 @@ namespace osu_replay_renderer_netcore.Audio
             apply(p);
             p.PutSamples(Data, Samples);
             p.Flush();
-            p.ReceiveSamples(Data, Samples);
+
+            var newData = Data;
+            if (Math.Abs(p.Pitch - 1) > float.Epsilon ||
+                Math.Abs(p.Tempo - 1) > float.Epsilon ||
+                Math.Abs(p.Rate - 1) > float.Epsilon)
+            {
+                newData = new float[Data.Length];
+            }
+            p.ReceiveSamples(newData, Samples);
+
+            Data = newData;
             return this;
         }
 

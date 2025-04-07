@@ -4,6 +4,7 @@ using osu_replay_renderer_netcore.CLI;
 using osu_replay_renderer_netcore.CustomHosts;
 using osu_replay_renderer_netcore.Patching;
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -287,7 +288,12 @@ namespace osu_replay_renderer_netcore
                 patched = true;
             }
 
+            var modsOverride = new List<string>();
+            var experimentalFlags = new List<string>();
+            
             test.OnOptions += (args) => { SimpleTest.ExecuteTest(args[0]); };
+            modOverride.OnOptions += (args) => { modsOverride.Add(args[0]); };
+            experimental.OnOptions += (args) => { experimentalFlags.Add(args[0]); };
             GameHost host;
             OsuGameRecorder game;
 
@@ -394,8 +400,8 @@ namespace osu_replay_renderer_netcore
                 });
                 
                 game = new OsuGameRecorder();
-                modOverride.OnOptions += (args) => { game.ModsOverride.Add(args[0]); };
-                experimental.OnOptions += (args) => { game.ExperimentalFlags.Add(args[0]); };
+                game.ModsOverride = modsOverride;
+                game.ExperimentalFlags = experimentalFlags;
 
                 if (applySkin.Triggered)
                 {
