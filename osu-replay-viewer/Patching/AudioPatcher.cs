@@ -27,9 +27,10 @@ namespace osu_replay_renderer_netcore.Patching
         [HarmonyPatch("Play")]
         class PoolableSkinnableSamplePatch
         {
-            static void Prefix(PoolableSkinnableSample __instance)
+            static bool Prefix(PoolableSkinnableSample __instance)
             {
                 TriggerOnSamplePlay(__instance.Sample);
+                return false;
             }
         }
 
@@ -37,9 +38,10 @@ namespace osu_replay_renderer_netcore.Patching
         [HarmonyPatch("Start")]
         class TrackBassPatch
         {
-            static void Prefix(TrackBass __instance)
+            static bool Prefix(TrackBass __instance)
             {
                 TriggerOnTrackPlay(__instance);
+                return false;
             }
         }
     }

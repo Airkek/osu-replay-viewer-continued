@@ -435,7 +435,7 @@ namespace osu_replay_renderer_netcore
                                         enc.WriteAudio(recordHost.AudioOutput);
                                     }
                                 }
-                                Logger.Log($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}", LoggingTarget.Runtime, LogLevel.Important);
+                                Console.WriteLine($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}");
                             }
                             Exit();
                         }, 11000);
