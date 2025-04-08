@@ -1,18 +1,7 @@
-# 【Deprecation notice】
-It has been more than a year since the last commit (other than update to this README). I can't allocate time to maintain this project, hence the inclusion of this deprecation notice. However, it is more than just not being able to have time for this.
-
-## Implementation is janky
-The current implementation involves IPC with ffmpeg, which impacts the performance during rendering. Although I am streaming raw image data from game process to ffmpeg over stdin, it can be done better by doing all encoding directly from game framebuffer to ffmpeg using C# binding.
-
-My wish is being able to make animation using o!f, then render the animation as video frames and include them in container like MP4 or MKV, without resorting to IPC. My theory is that, if I make a new renderer that's basically OpenGL but for offline rendering, I can send the framebuffer to ffmpeg directly. If you want to implement this then you also want to change the clock to manually control as well, because the current clock uses the system time on o!f by default.
-
-## Speed adjustment mods will not works
-Double time, Half time and other speed adjustment mods will not works.
-
----
-
-# osu! Replay Viewer
+# osu! Replay Viewer Continued
 _Based on osu!lazer_
+
+Fork of [nahkd123](https://github.com/nahkd123)'s [osu-replay-viewer](https://github.com/nahkd123/osu-replay-viewer)
 
 This replay viewer allow you to view imported replays (yes you have to import them in osu!lazer
 client) without launching the actual game, and you can also render replays to video files, thanks
@@ -48,10 +37,9 @@ osu-replay-viewer --skin select "osu!classic" --view local f1bb0aa3-5111-4534-b9
 ```
 
 ## Requirements
-- [.NET 5.0](https://dotnet.microsoft.com/download/dotnet/5.0)
+- [.NET 8.0](https://dotnet.microsoft.com/download/dotnet/8.0)
 - OpenGL ES 3.0 compatible device
-- FFmpeg installed as command (a.k.a you must be able to run ``ffmpeg`` without including an entire
-  path to it) if you want to render the replay to video
+- FFmpeg installed
 
 This replay viewer is not guranteed to works on platforms other than Windows, but at least it's managed
 to works on Linux previously. If you have any problem related to Linux platform, please create a new
@@ -133,7 +121,7 @@ Usage:
     Record Audio Output
     Set record audio output (the file is always in RIFF Wave format)
 
-  --record-resolution      <Width = 1280> <Height = 600>
+  --record-resolution      <Width = 1280> <Height = 720>
     Alternatives: -RSL
     Record Resolution
     Set the output resolution
@@ -143,10 +131,20 @@ Usage:
     Record FPS
     Set the output FPS
 
-  --jpeg
-    Alternatives: -JPG
-    Jpeg Output Mode
-    Send Jpeg data to FFmpeg process instead of raw pixels
+  --ffmpeg-type            <Type (external/bindings)>
+    Alternatives: -FT
+    FFmpeg type
+    Which type of ffmpeg should we use
+
+  --ffmpeg-path            <Path>
+    Alternatives: -FLP
+    FFmpeg folder path
+    Path to directory with ffmpeg binary/libs
+
+  --ffmpeg-exec            <Path>
+    Alternatives: -FEXE
+    FFmpeg executable path
+    Path to ffmpeg executable binary
 
   --ffmpeg-preset          <Preset = slow>
     Alternatives: -FPR
@@ -163,7 +161,7 @@ Usage:
     FFmpeg Motion Interpolation
     Use motion interpolation to create smooth transition
 
-  --ffmpeg-encoder         <Encoder = libx264>
+  --ffmpeg-encoder         <Encoder (libx264/h264_nvenc/h264_qsv/h264_amf/h264_videotoolbox)>
     Alternatives: -FENC
     FFmpeg Video Encoder
     Set video encoder for FFmpeg. 'ffmpeg -encoders' for the list
@@ -192,12 +190,16 @@ Usage:
     Alternatives: --list-skins, -lskins, -lskin
     List Skins
     List all available skins
+
+  --test                   <Test Type (see SimpleTest.cs)>
+    Test Mode
+    Test various stuffs (offline audio mixing for now)
 ```
 
 ## Build
 To build this project, you need:
 
-- .NET 5.0 SDK
+- .NET 8.0 SDK
 - Git
 
 Clone this repository (``git clone``), then build it with ``dotnet build`` command.
