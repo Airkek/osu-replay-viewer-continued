@@ -541,6 +541,7 @@ namespace osu_replay_renderer_netcore
 
         private static bool CanApplyPatch()
         {
+            // https://github.com/pardeike/Harmony/issues/607 -> https://github.com/MonoMod/MonoMod/issues/90
             return RuntimeInformation.ProcessArchitecture == Architecture.X86 ||
                    RuntimeInformation.ProcessArchitecture == Architecture.X64;
         }
