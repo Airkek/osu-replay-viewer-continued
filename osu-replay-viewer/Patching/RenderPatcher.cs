@@ -28,15 +28,11 @@ namespace osu_replay_renderer_netcore.Patching
             
             var veldridDeviceType = typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.Veldrid.VeldridDevice");
             var veldridSwapBuffersMethod = veldridDeviceType.GetMethod("SwapBuffers");
-            Harmony.Patch(veldridSwapBuffersMethod,
-                GetType().GetMethod(nameof(SwapBuffersPrefix),
-                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
+            Harmony.Patch(veldridSwapBuffersMethod, (Delegate)SwapBuffersPrefix);
             
             var glRendererType = typeof(IRenderer).Assembly.GetType("osu.Framework.Graphics.OpenGL.GLRenderer");
             var glSwapBuffersMethod = glRendererType.GetMethod("SwapBuffers", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-            Harmony.Patch(glSwapBuffersMethod,
-                GetType().GetMethod(nameof(SwapBuffersPrefix),
-                    BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public));
+            Harmony.Patch(glSwapBuffersMethod, (Delegate)SwapBuffersPrefix);
         }
 
         public static event Action OnDraw;

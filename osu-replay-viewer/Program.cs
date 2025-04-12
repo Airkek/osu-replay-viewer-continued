@@ -267,6 +267,7 @@ namespace osu_replay_renderer_netcore
                 new AudioPatcher().DoPatching();
                 new ClockPatcher().DoPatching();
                 new RenderPatcher().DoPatching();
+                new WindowPatcher().DoPatching();
                 patched = true;
             }
 
