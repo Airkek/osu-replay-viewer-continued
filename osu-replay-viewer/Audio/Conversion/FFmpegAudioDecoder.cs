@@ -20,7 +20,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
 
             if (Math.Abs(tempoFactor - 1.0f) > double.Epsilon)
             {
-                filters.Add($"rubberband=tempo={tempoFactor}");
+                filters.Add($"rubberband=tempo={tempoFactor.ToString(CultureInfo.InvariantCulture)}");
             }
 
             if (Math.Abs(pitchFactor - 1.0f) > double.Epsilon)
