@@ -35,9 +35,6 @@ namespace osu_replay_renderer_netcore
             OptionDescription generalList;
             OptionDescription generalView;
 
-            OptionDescription headlessMode;
-            OptionDescription headlessLoopback;
-
             OptionDescription recordMode;
             OptionDescription recordOutput;
             OptionDescription recordResolution;
@@ -121,23 +118,6 @@ namespace osu_replay_renderer_netcore
                         Description = "View help with details",
                         DoubleDashes = new[] { "help" },
                         SingleDash = new[] { "h" }
-                    },
-
-                    // Headless options
-                    headlessMode = new()
-                    {
-                        Name = "Headless Mode",
-                        Description = "Switch to headless mode (not rendering anything to screen)",
-                        DoubleDashes = new[] { "headless" },
-                        SingleDash = new[] { "H" }
-                    },
-                    headlessLoopback = new()
-                    {
-                        Name = "Headless Audio Loopback",
-                        Description = "Record audio produced by headless host through loopback device",
-                        DoubleDashes = new[] { "headless-loopback" },
-                        SingleDash = new[] { "HL" },
-                        Parameters = new[] { "Input Device ID", "Output Device ID", "Output File (.wav)" }
                     },
 
                     // Record options
@@ -388,20 +368,6 @@ namespace osu_replay_renderer_netcore
                             recordHost.Encoder = new FFmpegAutoGenEncoder(config);
                             break;
                     }
-                }
-                else if (headlessMode.Triggered)
-                {
-                    var headlessHost = new ReplayHeadlessGameHost(gameName, new HostOptions
-                    {
-                        //BindIPC = false
-                    });
-                    if (headlessLoopback.Triggered)
-                    {
-                        headlessHost.AudioInputDevice = ParseIntOrThrow(headlessLoopback[0]);
-                        headlessHost.AudioOutputDevice = ParseIntOrThrow(headlessLoopback[1]);
-                        headlessHost.OutputAudioToFile = headlessLoopback[2];
-                    }
-                    host = headlessHost;
                 }
                 else host = Host.GetSuitableDesktopHost(gameName, new HostOptions
                 {

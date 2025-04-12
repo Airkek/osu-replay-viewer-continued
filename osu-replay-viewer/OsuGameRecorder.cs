@@ -423,12 +423,6 @@ namespace osu_replay_renderer_netcore
             
             //MenuCursorContainer.Cursor.RemoveAll(v => true, true);
 
-            if (Host is HeadlessGameHost headless)
-            {
-                Console.WriteLine("Headless Host detected");
-                if (headless is ReplayHeadlessGameHost wrv) wrv.PrepareAudioDevices();
-            }
-
             var configMgr = configCache.GetConfigFor(Ruleset.Value.CreateInstance());
             if (configMgr is OsuRulesetConfigManager osuMgr)
             {
