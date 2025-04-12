@@ -81,6 +81,16 @@ Usage:
     Query
     Query data (Eg: find something in help index or query replays)
 
+  --osu-mode
+    Alternatives: -osu
+    osu!lazer mode
+    Use osu!lazer data (songs, skins, replays)
+
+  --import-beatmap         <path/to/File.osz>
+    Alternatives: -osz
+    Import beatmap
+    Import beatmap from file
+
   --list
     Alternatives: -list, -l
     List Replays
@@ -96,16 +106,6 @@ Usage:
     Help Index
     View help with details
 
-  --headless
-    Alternatives: -H
-    Headless Mode
-    Switch to headless mode (not rendering anything to screen)
-
-  --headless-loopback      <Input Device ID> <Output Device ID> <Output File (.wav)>
-    Alternatives: -HL
-    Headless Audio Loopback
-    Record audio produced by headless host through loopback device
-
   --record
     Alternatives: -R
     Record Mode
@@ -115,11 +115,6 @@ Usage:
     Alternatives: -O
     Record Output
     Set record output
-
-  --record-audio           <Output = <--record-output>.wav>
-    Alternatives: --record-audio-output, -AO
-    Record Audio Output
-    Set record audio output (the file is always in RIFF Wave format)
 
   --record-resolution      <Width = 1280> <Height = 720>
     Alternatives: -RSL
@@ -190,10 +185,6 @@ Usage:
     Alternatives: --list-skins, -lskins, -lskin
     List Skins
     List all available skins
-
-  --test                   <Test Type (see SimpleTest.cs)>
-    Test Mode
-    Test various stuffs (offline audio mixing for now)
 ```
 
 ## Build

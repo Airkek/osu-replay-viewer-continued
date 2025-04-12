@@ -474,7 +474,7 @@ namespace osu_replay_renderer_netcore
                         statisticsPanel.ToggleVisibility();
                     }, 2500);
                     
-                    if (Host is ReplayRecordGameHost || Host is HeadlessGameHost)
+                    if (Host is ReplayRecordGameHost)
                     {
                         Scheduler.AddDelayed(() =>
                         {

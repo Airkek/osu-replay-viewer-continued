@@ -28,8 +28,6 @@ namespace osu_replay_renderer_netcore
             OptionDescription modOverride;
             OptionDescription query;
             OptionDescription osuGameName;
-
-            OptionDescription beatmapImport;
             
             OptionDescription generalHelp;
             OptionDescription generalList;
@@ -53,7 +51,7 @@ namespace osu_replay_renderer_netcore
             OptionDescription overrideOverlayOptions;
             OptionDescription applySkin;
             OptionDescription listSkins;
-            OptionDescription test;
+            OptionDescription beatmapImport;
             
             CommandLineProcessor cli = new()
             {
@@ -257,13 +255,6 @@ namespace osu_replay_renderer_netcore
                         Description = "List all available skins",
                         DoubleDashes = new[] { "list-skin", "list-skins" },
                         SingleDash = new [] { "lskins", "lskin" }
-                    },
-                    test = new()
-                    {
-                        Name = "Test Mode",
-                        Description = "Test various stuffs (offline audio mixing for now)",
-                        DoubleDashes = new[] { "test" },
-                        Parameters = new[] { "Test Type (see SimpleTest.cs)" }
                     }
                 }
             };
@@ -282,7 +273,6 @@ namespace osu_replay_renderer_netcore
             var modsOverride = new List<string>();
             var experimentalFlags = new List<string>();
             
-            test.OnOptions += (args) => { SimpleTest.ExecuteTest(args[0]); };
             modOverride.OnOptions += (args) => { modsOverride.Add(args[0]); };
             experimental.OnOptions += (args) => { experimentalFlags.Add(args[0]); };
             GameHost host;
@@ -291,7 +281,6 @@ namespace osu_replay_renderer_netcore
             try
             {
                 var progParams = cli.ProcessOptionsAndFilter(args);
-                if (test.Triggered) return;
                 if (args.Length == 0 || generalHelp.Triggered)
                 {
                     Console.WriteLine("Usage:");
