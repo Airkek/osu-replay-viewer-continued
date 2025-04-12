@@ -22,6 +22,14 @@ using osu.Game.Configuration;
 
 namespace osu_replay_renderer_netcore.CustomHosts
 {
+    public enum GlRenderer
+    {
+        Auto,
+        Veldrid,
+        Deferred,
+        Legacy
+    }
+    
     /// <summary>
     /// Game host that's designed to record the game. This will spawn an OpenGL window, but this
     /// will be changed in the future (maybe we'll hide it, or maybe we'll implement entire
@@ -49,6 +57,9 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public bool UsingEncoder { get; set; } = true;
         public readonly bool IsFinishFramePatched;
         public readonly bool IsAudioPatched;
+
+        public GlRenderer RendererType { get; set; } = GlRenderer.Auto;
+        
 
         private RenderWrapper wrapper;
 
@@ -110,8 +121,53 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         protected override void ChooseAndSetupRenderer()
         {
-            SetupRendererAndWindow("veldrid", GraphicsSurfaceType.OpenGL);
+            var type = RendererType;
+
+            if (type == GlRenderer.Auto)
+            {
+                // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook 
+                
+                switch (RuntimeInfo.OS)
+                {
+                    case RuntimeInfo.Platform.Windows:
+                        type = GlRenderer.Veldrid;
+                        break;
+                    case RuntimeInfo.Platform.Linux:
+                    case RuntimeInfo.Platform.macOS:
+                        type = GlRenderer.Legacy;
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+
+            var rendererStr = string.Empty;
+            
+            switch (type)
+            {
+                case GlRenderer.Veldrid:
+                    rendererStr = "veldrid";
+                    break;
+                case GlRenderer.Deferred:
+                    rendererStr = "deferred";
+                    break;
+                case GlRenderer.Legacy:
+                    rendererStr = "gl";
+                    break;
+                case GlRenderer.Auto:
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
+
+            SetupRendererAndWindow(rendererStr, GraphicsSurfaceType.OpenGL);
             wrapper = CreateWrapper(Renderer, Encoder.Resolution);
+            if (wrapper is null)
+            {
+                Console.Error.WriteLine($"Cannot create wrapper for renderer: {Renderer.GetType()}");
+                Exit();
+            }
+            
+            Console.WriteLine($"Created '{type}' renderer. Type: {Renderer.GetType()}, wrapper: {wrapper.GetType()}");
         }
 
         private static RenderWrapper CreateWrapper(IRenderer renderer, Size size)

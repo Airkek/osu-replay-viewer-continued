@@ -34,6 +34,7 @@ namespace osu_replay_renderer_netcore
             OptionDescription generalView;
 
             OptionDescription recordMode;
+            OptionDescription recordRenderer;
             OptionDescription recordOutput;
             OptionDescription recordResolution;
             OptionDescription recordFPS;
@@ -125,6 +126,15 @@ namespace osu_replay_renderer_netcore
                         Description = "Switch to record mode",
                         DoubleDashes = new[] { "record" },
                         SingleDash = new[] { "R" }
+                    },
+                    recordRenderer = new()
+                    {
+                        Name = "Record mode Renderer",
+                        Description = "Select osu!framework renderer for record mode",
+                        DoubleDashes = new[] { "record-renderer" },
+                        SingleDash = new[] { "RR" },
+                        Parameters = new []{ "Type (auto/veldrid/deferred/legacy)" },
+                        ProcessedParameters = new [] { "auto" }
                     },
                     recordOutput = new()
                     {
@@ -323,6 +333,8 @@ namespace osu_replay_renderer_netcore
                         Height = ParseIntOrThrow(recordResolution[1])
                     };
 
+                    recordHost.RendererType = ParseRenderer(recordRenderer[0]);
+
                     var config = new EncoderConfig
                     {
                         FPS = fps,
@@ -483,6 +495,28 @@ namespace osu_replay_renderer_netcore
             if (recordMode.Triggered) game.DecodeAudio = true;
             host.Run(game);
             host.Dispose();
+        }
+        
+        static GlRenderer ParseRenderer(string str)
+        {
+            switch (str.ToLower().Trim())
+            {
+                case "auto":
+                    return GlRenderer.Auto;
+                case "veldrid":
+                    return GlRenderer.Veldrid;
+                case "deferred":
+                    return GlRenderer.Deferred;
+                case "legacy":
+                case "gl":
+                    return GlRenderer.Legacy;
+                default:
+                    throw new CLIException
+                    {
+                        Cause = "Command-line Arguments (Parsing)",
+                        DisplayMessage = $"Invalid integer: {str}"
+                    };
+            }
         }
 
         static int ParseIntOrThrow(string str)
