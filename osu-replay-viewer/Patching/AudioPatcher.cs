@@ -33,6 +33,17 @@ namespace osu_replay_renderer_netcore.Patching
                 return false;
             }
         }
+        
+        [HarmonyPatch(typeof(Sample))]
+        [HarmonyPatch("Play")]
+        class SamplePatch
+        {
+            static bool Prefix(Sample __instance)
+            {
+                TriggerOnSamplePlay(__instance);
+                return false;
+            }
+        }
 
         [HarmonyPatch(typeof(TrackBass))]
         [HarmonyPatch("Start")]
