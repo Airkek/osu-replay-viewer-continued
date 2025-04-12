@@ -58,7 +58,14 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          find artifacts/ -type f -exec cp {} release-assets \;
+          for dir in artifacts/*/; do
+            dir_name=$(basename "$dir")
+            if [[ "$dir_name" == *Windows* ]]; then
+              (cd "$dir" && zip -r "../../release-assets/${dir_name}.zip" .)
+            else
+              tar -czf "release-assets/${dir_name}.tar.gz" -C "$dir" .
+            fi
+          done
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
