@@ -44,7 +44,7 @@ public abstract class EncoderBase
         MotionInterpolation = config.MotionInterpolation;
         FramesBlending = config.FramesBlending;
         FFmpegPath = config.FFmpegPath;
-        FFmpegExec = config.FFmpegExec;
+        FFmpegExec = config.FFmpegExec ?? "ffmpeg";
     }
 
     protected abstract void _writeFrameInternal(ReadOnlySpan<byte> frame);
