@@ -90,7 +90,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
             AudioPatcher.OnTrackPlay += track =>
             {
-                //Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
+                Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
                 if (AudioTrack == null) return;
                 AudioJournal.BufferAt(recordClock.CurrentTime / 1000.0, AudioTrack, buff =>
                 {

@@ -56,6 +56,9 @@ namespace osu_replay_renderer_netcore
         public bool DecodeAudio { get; set; } = false;
         public SkinAction SkinActionType { get; set; } = SkinAction.Select;
         public string Skin { get; set; } = string.Empty;
+
+        public string BeatmapPath { get; set; } = string.Empty;
+        
         public AudioBuffer DecodedAudio;
         public bool HideOverlaysInPlayer = false;
 
@@ -64,33 +67,88 @@ namespace osu_replay_renderer_netcore
 
         public OsuGameRecorder()
         {}
+
+        private string TempFolder = Path.GetTempPath();
         
         public Live<SkinInfo> ImportSkin(string skinPath)
         {
             if (!File.Exists(skinPath))
             {
-                Logger.Log($"Skin file not found: {skinPath}", LoggingTarget.Runtime, LogLevel.Error);
+                Console.Error.WriteLine($"Skin file not found: {skinPath}");
                 Exit();
                 return null;
             }
-            var skin = SkinManager.Import(new ImportTask(null!, skinPath)).GetAwaiter().GetResult();
-            return skin;
+
+            if (!Directory.Exists(TempFolder))
+            {
+                Directory.CreateDirectory(TempFolder);
+            }
+
+            var tmpFile = Path.Combine(TempFolder, Path.GetFileName(skinPath));
+
+            try
+            {
+                File.Copy(skinPath, tmpFile);
+            }
+            catch
+            {
+                Console.Error.WriteLine("Cannot copy skin file to temp folder");
+                Exit();
+                return null;
+            }
+
+            try
+            {
+                var skin = SkinManager.Import(new ImportTask(null!, tmpFile)).GetAwaiter().GetResult();
+                return skin;
+            }
+            finally
+            {
+                File.Delete(tmpFile);
+            }
         }
 
         public Live<BeatmapSetInfo> ImportBeatmapSet(string beatmapSetPath)
         {
             if (!File.Exists(beatmapSetPath))
             {
-                Logger.Log($"Beatmap file not found: {beatmapSetPath}", LoggingTarget.Runtime, LogLevel.Error);
+                Console.Error.WriteLine($"Beatmap file not found: {beatmapSetPath}");
                 Exit();
                 return null;
             }
-            var beatmap = BeatmapManager.Import(new ImportTask(null!, beatmapSetPath)).GetAwaiter().GetResult();
-            return beatmap;
+            
+            if (!Directory.Exists(TempFolder))
+            {
+                Directory.CreateDirectory(TempFolder);
+            }
+
+            var tmpFile = Path.Combine(TempFolder, Path.GetFileName(beatmapSetPath));
+
+            try
+            {
+                File.Copy(beatmapSetPath, tmpFile);
+            }
+            catch
+            {
+                Console.Error.WriteLine("Cannot copy beatmapset file to temp folder");
+                Exit();
+                return null;
+            }
+
+            try
+            {
+                var beatmap = BeatmapManager.Import(new ImportTask(null!, tmpFile)).GetAwaiter().GetResult();
+                return beatmap;
+            }
+            finally
+            {
+                File.Delete(tmpFile);
+            }
         }
         
         public void SelectSkin(Live<SkinInfo> skin)
         {
+            Console.WriteLine($"Selected skin: {skin.Value.Name}");
             SkinManager.CurrentSkinInfo.Value = skin;
         }
 
@@ -167,6 +225,11 @@ namespace osu_replay_renderer_netcore
                 Exit();
                 return;
             }
+
+            if (!string.IsNullOrWhiteSpace(BeatmapPath))
+            {
+                ImportBeatmapSet(BeatmapPath);
+            }
             
             Score score;
             ScoreInfo scoreInfo = null;
@@ -222,6 +285,7 @@ namespace osu_replay_renderer_netcore
                     using (FileStream stream = new(ReplayFileLocation, FileMode.Open))
                     {
                         var decoder = new DatabasedLegacyScoreDecoder(RulesetStore, BeatmapManager);
+
                         try
                         {
                             score = decoder.Parse(stream);
@@ -231,10 +295,12 @@ namespace osu_replay_renderer_netcore
                         catch (LegacyScoreDecoder.BeatmapNotFoundException e)
                         {
                             Console.Error.WriteLine("Beatmap not found while opening replay: " + e.Message);
-                            Console.Error.WriteLine("Please make sure the beatmap is imported in your osu!lazer installation");
+                            Console.Error.WriteLine(
+                                "Please make sure the beatmap is imported in your osu!lazer installation");
                             score = null;
                         }
                     }
+
                     break;
                 default: throw new Exception($"Unknown type {ReplayViewType}");
             }
@@ -328,16 +394,16 @@ namespace osu_replay_renderer_netcore
                 }
                 else
                 {
-                    Logger.Log($"Using skin {Skin}");
                     skin = SkinManager.Query(c => c.Name == Skin);
                 }
 
                 if (skin is null)
                 {
-                    Logger.Log("Skin not found.", LoggingTarget.Runtime, LogLevel.Error);
+                    Console.Error.WriteLine("Skin not found.");
                     Exit();
                     return;
                 }
+
                 SelectSkin(skin);
                 LocalConfig.GetBindable<bool>(OsuSetting.BeatmapColours).Value = false;
                 LocalConfig.GetBindable<bool>(OsuSetting.BeatmapSkins).Value = false;

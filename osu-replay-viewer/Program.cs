@@ -18,13 +18,19 @@ namespace osu_replay_renderer_netcore
 {
     class Program
     {
+        const string GAME_NAME = "osu_replay_viewer";
+        const string OSU_GAME_NAME = "osu";
+        
         static void Main(string[] args)
         {
             // Command tree
             OptionDescription alwaysYes;
             OptionDescription modOverride;
             OptionDescription query;
+            OptionDescription osuGameName;
 
+            OptionDescription beatmapImport;
+            
             OptionDescription generalHelp;
             OptionDescription generalList;
             OptionDescription generalView;
@@ -80,7 +86,21 @@ namespace osu_replay_renderer_netcore
                         SingleDash = new[] { "q" },
                         Parameters = new[] { "Keyword" }
                     },
-
+                    osuGameName = new()
+                    {
+                        Name = "osu!lazer mode",
+                        Description = "Use osu!lazer data (songs, skins, replays)",
+                        DoubleDashes = new[] { "osu-mode" },
+                        SingleDash = new[] { "osu" }
+                    },
+                    beatmapImport = new()
+                    {
+                        Name = "Import beatmap",
+                        Description = "Import beatmap from file",
+                        DoubleDashes = new[] { "import-beatmap" },
+                        SingleDash = new[] { "osz" },
+                        Parameters = new[] { "path/to/File.osz" }
+                    },
                     generalList = new()
                     {
                         Name = "List Replays",
@@ -311,6 +331,13 @@ namespace osu_replay_renderer_netcore
                     return;
                 }
 
+                var gameName = GAME_NAME;
+
+                if (osuGameName.Triggered)
+                {
+                    gameName = OSU_GAME_NAME;
+                }
+
                 if (recordMode.Triggered)
                 {
                     if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, recordOutput[0])) return;
@@ -333,7 +360,7 @@ namespace osu_replay_renderer_netcore
                             clock.ChangeSource(new WrappedClock(recordClock, clock.Source as StopwatchClock));
                         };
                     }
-                    var recordHost = new ReplayRecordGameHost("osu", recordClock, patched);
+                    var recordHost = new ReplayRecordGameHost(gameName, recordClock, patched);
                     host = recordHost;
 
                     recordHost.Resolution = new Size
@@ -381,7 +408,7 @@ namespace osu_replay_renderer_netcore
                 }
                 else if (headlessMode.Triggered)
                 {
-                    var headlessHost = new ReplayHeadlessGameHost("osu", new HostOptions
+                    var headlessHost = new ReplayHeadlessGameHost(gameName, new HostOptions
                     {
                         //BindIPC = false
                     });
@@ -393,7 +420,7 @@ namespace osu_replay_renderer_netcore
                     }
                     host = headlessHost;
                 }
-                else host = Host.GetSuitableDesktopHost("osu", new HostOptions
+                else host = Host.GetSuitableDesktopHost(gameName, new HostOptions
                 {
                     //BindIPC = false
                 });
@@ -406,6 +433,11 @@ namespace osu_replay_renderer_netcore
                 {
                     game.SkinActionType = (SkinAction)Enum.Parse(typeof(SkinAction), applySkin[0][0].ToString().ToUpper() + applySkin[0].Substring(1));
                     game.Skin = applySkin[1];
+                }
+
+                if (beatmapImport.Triggered)
+                {
+                    game.BeatmapPath = beatmapImport[0];
                 }
                 
                 if (generalList.Triggered)
