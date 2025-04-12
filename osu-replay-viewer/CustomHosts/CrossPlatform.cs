@@ -35,6 +35,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public static IWindow GetWindow(GraphicsSurfaceType preferredSurface, string name)
         {
             string typeName;
+            Type[] ctorParamsTypes = [typeof(GraphicsSurfaceType), typeof(string)];
+            object[] ctorParams = new object[] { preferredSurface, name };
             switch (RuntimeInfo.OS)
             {
                 case RuntimeInfo.Platform.Windows:
@@ -42,6 +44,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
                     break;
                 case RuntimeInfo.Platform.Linux:
                     typeName = FrameworkEnvironment.UseSDL3 ? "osu.Framework.Platform.Linux.SDL3LinuxWindow" : "osu.Framework.Platform.Linux.SDL2LinuxWindow";
+                    ctorParamsTypes = [typeof(GraphicsSurfaceType), typeof(string), typeof(bool)];
+                    ctorParams = new object[] { preferredSurface, name, /* bypassCompositor */ true };
                     break;
                 case RuntimeInfo.Platform.macOS:
                     typeName = FrameworkEnvironment.UseSDL3 ? "osu.Framework.Platform.MacOS.SDL3MacOSWindow" : "osu.Framework.Platform.MacOS.SDL2MacOSWindow";
@@ -54,13 +58,13 @@ namespace osu_replay_renderer_netcore.CustomHosts
             ConstructorInfo ctor = windowType.GetConstructor(
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
                 null,
-                [typeof(GraphicsSurfaceType), typeof(string)],
+                ctorParamsTypes,
                 null);
             if (ctor == null)
             {
                 throw new MissingMethodException("Could not find the required constructor");
             }
-            object instance = ctor.Invoke(new object[] { preferredSurface, name });
+            object instance = ctor.Invoke(ctorParams);
             return instance as IWindow;
         }
     }
