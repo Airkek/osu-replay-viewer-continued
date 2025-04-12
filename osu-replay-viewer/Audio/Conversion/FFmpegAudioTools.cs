@@ -55,7 +55,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             }
         }
 
-        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, int outChannels = 2, int outRate = 44100)
+        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 44100)
         {
             var filters = new List<string>();
 
@@ -70,6 +70,11 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             if (Math.Abs(pitchFactor - 1.0f) > double.Epsilon)
             {
                 filters.Add($"rubberband=pitch={pitchFactor.ToString(CultureInfo.InvariantCulture)}");
+            }
+            
+            if (Math.Abs(volume - 1.0) > double.Epsilon)
+            {
+                filters.Add($"volume={volume.ToString(CultureInfo.InvariantCulture)}");
             }
 
             var args = new StringBuilder();

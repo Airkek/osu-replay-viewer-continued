@@ -100,6 +100,7 @@ namespace osu_replay_renderer_netcore
             try
             {
                 var skin = SkinManager.Import(new ImportTask(null!, tmpFile)).GetAwaiter().GetResult();
+                skin.PerformRead(_ => { });
                 return skin;
             }
             finally
@@ -138,6 +139,7 @@ namespace osu_replay_renderer_netcore
             try
             {
                 var beatmap = BeatmapManager.Import(new ImportTask(null!, tmpFile)).GetAwaiter().GetResult();
+                beatmap.PerformRead(_ => { });
                 return beatmap;
             }
             finally
@@ -289,8 +291,6 @@ namespace osu_replay_renderer_netcore
                         try
                         {
                             score = decoder.Parse(stream);
-                            var mapId = score.ScoreInfo.BeatmapInfo.OnlineID;
-                            score.ScoreInfo.BeatmapInfo = BeatmapManager.QueryBeatmap(v => v.OnlineID == mapId);
                         }
                         catch (LegacyScoreDecoder.BeatmapNotFoundException e)
                         {
@@ -298,6 +298,7 @@ namespace osu_replay_renderer_netcore
                             Console.Error.WriteLine(
                                 "Please make sure the beatmap is imported in your osu!lazer installation");
                             score = null;
+                            Exit();
                         }
                     }
 
@@ -375,7 +376,9 @@ namespace osu_replay_renderer_netcore
                     }
                 }
                 Logger.Log("Decoding audio...");
-                DecodedAudio = FFmpegAudioTools.Decode(GetCurrentBeatmapAudioPath(), speed, pitch);
+                var volumeMusic = config.Get<double>(FrameworkSetting.VolumeMusic);
+                var volumeUniversal = config.Get<double>(FrameworkSetting.VolumeUniversal);
+                DecodedAudio = FFmpegAudioTools.Decode(GetCurrentBeatmapAudioPath(), tempoFactor: speed, pitchFactor: pitch, volume: volumeMusic * volumeUniversal);
                 Logger.Log("Audio decoded!");
                 if (Host is ReplayRecordGameHost recordHost) recordHost.AudioTrack = DecodedAudio;
             }

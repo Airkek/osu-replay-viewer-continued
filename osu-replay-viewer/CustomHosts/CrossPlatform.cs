@@ -12,23 +12,19 @@ namespace osu_replay_renderer_netcore.CustomHosts
     {
         public static IEnumerable<string> GetUserStoragePaths()
         {
-            yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData,
-                Environment.SpecialFolderOption.Create);
             switch (RuntimeInfo.OS)
             {
                 case RuntimeInfo.Platform.Windows:
-                    yield return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                    // https://github.com/ppy/osu-framework/blob/master/osu.Framework/Platform/Windows/WindowsGameHost.cs
+                    yield return Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData, Environment.SpecialFolderOption.Create);
                     break;
 
                 case RuntimeInfo.Platform.Linux:
-                    // https://github.com/ppy/osu-framework/blob/master/osu.Framework/Platform/Linux/LinuxGameHost.cs
-                    string xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
-                    if (!string.IsNullOrEmpty(xdg)) yield return xdg;
-                    yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".local", "share");
-                    // foreach (string path in baseHost.UserStoragePaths) yield return path;
+                    yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create); 
                     break;
                 
                 case RuntimeInfo.Platform.macOS:
+                    yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create);
                     yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
                     break;
 
@@ -36,7 +32,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
         }
 
-        public static IWindow GetWindow(GraphicsSurfaceType preferredSurface)
+        public static IWindow GetWindow(GraphicsSurfaceType preferredSurface, string name)
         {
             string typeName;
             switch (RuntimeInfo.OS)
@@ -64,7 +60,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             {
                 throw new MissingMethodException("Could not find the required constructor");
             }
-            object instance = ctor.Invoke(new object[] { preferredSurface, "osureplayviewer" });
+            object instance = ctor.Invoke(new object[] { preferredSurface, name });
             return instance as IWindow;
         }
     }

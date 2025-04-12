@@ -2,7 +2,7 @@
   "profiles": {
     "osu-replay-renderer-netcore": {
       "commandName": "Project",
-      "commandLineArgs": "--yes --mod-override acronyms:DT --mod-override acronyms:HD --view file D:\\replay.osr -osz D:\\beatmap.osz -skin import D:\\skin.osk -FENC h264_nvenc -FPR p7 -FT pipe -FLP C:\\ffmpeg -FEXE C:\\ffmpeg\\ffmpeg.exe -RSL 1280 720 -FPS 60 -R -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
+      "commandLineArgs": "--yes --view file D:\\replay.osr -osz D:\\beatmap.osz -skin import D:\\skin.osk -FENC h264_nvenc -FPR p7 -FT pipe -FLP C:\\ffmpeg -FEXE C:\\ffmpeg\\ffmpeg.exe -RSL 1280 720 -FPS 60 -R -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
     }
   }
 }

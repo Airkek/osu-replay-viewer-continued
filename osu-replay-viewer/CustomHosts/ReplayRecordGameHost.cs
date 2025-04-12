@@ -41,7 +41,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private RecordClock recordClock;
         protected override IFrameBasedClock SceneGraphClock => recordClock;
-        protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => CrossPlatform.GetWindow(preferredSurface);
+        protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => CrossPlatform.GetWindow(preferredSurface, Name);
         protected override IEnumerable<InputHandler> CreateAvailableInputHandlers() => new InputHandler[] { };
 
         public Size Resolution { get; set; } = new System.Drawing.Size { Width = 1280, Height = 720 };
@@ -91,12 +91,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             {
                 Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
                 if (AudioTrack == null) return;
-                AudioJournal.BufferAt(recordClock.CurrentTime / 1000.0, AudioTrack, buff =>
-                {
-                    //buff.Process(x => x * track.Volume.Value * track.AggregateVolume.Value); // fade-in volume 
-                    // TODO: parse volume from settings 
-                    return buff;
-                });
+                AudioJournal.BufferAt(recordClock.CurrentTime / 1000.0, AudioTrack);
             };
 
             AudioPatcher.OnSamplePlay += sample =>
