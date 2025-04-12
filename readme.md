@@ -21,19 +21,26 @@ to upgrade to make UI matches with actual game
 
 ## Basic Usage
 ```sh
-# List all downloaded replays
+# List all downloaded replays in osu!lazer
 # Look for replay GUID (something like f1bb0aa3-5111-4534-b93d-e1e20074f7fe) and pass it to
 # --view local <GUID>
-osu-replay-viewer --list
+osu-replay-viewer -osu --list
 
-# View replay
-osu-replay-viewer --view local f1bb0aa3-5111-4534-b93d-e1e20074f7fe
+# View replay from osu!lazer
+osu-replay-viewer -osu --view local f1bb0aa3-5111-4534-b93d-e1e20074f7fe
 
-# List all available skins
-osu-replay-viewer --list-skin
+# List all available skins in osu!lazer
+osu-replay-viewer -osu --list-skin
 
-# View replay with given skin
-osu-replay-viewer --skin select "osu!classic" --view local f1bb0aa3-5111-4534-b93d-e1e20074f7fe
+# View replay with given skin from osu!lazer
+osu-replay-viewer -osu --skin select "osu!classic" --view local f1bb0aa3-5111-4534-b93d-e1e20074f7fe
+
+# Record replay (without using osu!lazer data)
+osu-replay-viewer --skin import path/to/skin.osk --import-beatmap path/to/beatmapset.osz --view file path/to/replay.osr --record 
+
+# Record replay using nvidia hardware encoder (without using osu!lazer data)
+osu-replay-viewer --skin import path/to/skin.osk --import-beatmap path/to/beatmapset.osz --view file path/to/replay.osr --record --ffmpeg-encoder h264_nvenc --ffmpeg-preset p7
+
 ```
 
 ## Requirements
@@ -41,9 +48,7 @@ osu-replay-viewer --skin select "osu!classic" --view local f1bb0aa3-5111-4534-b9
 - OpenGL ES 3.0 compatible device
 - FFmpeg installed
 
-This replay viewer is not guranteed to works on platforms other than Windows, but at least it's managed
-to works on Linux previously. If you have any problem related to Linux platform, please create a new
-issue.
+This replay viewer is not guranteed to works on platforms other than Windows and Linux. Recording on non-x86 processors (arm/risc-v) is broken because Harmony does not support these architectures.
 
 ## Installing FFmpeg
 1. Grab FFmpeg binaries [here](https://www.ffmpeg.org/download.html)
@@ -110,6 +115,11 @@ Usage:
     Alternatives: -R
     Record Mode
     Switch to record mode
+
+  --record-renderer        <Type (auto/veldrid/deferred/legacy)>
+    Alternatives: -RR
+    Record mode Renderer
+    Select osu!framework renderer for record mode
 
   --record-output          <Output = osu-replay.mp4>
     Alternatives: -O
@@ -185,6 +195,7 @@ Usage:
     Alternatives: --list-skins, -lskins, -lskin
     List Skins
     List all available skins
+
 ```
 
 ## Build
@@ -193,7 +204,7 @@ To build this project, you need:
 - .NET 8.0 SDK
 - Git
 
-Clone this repository (``git clone``), then build it with ``dotnet build`` command.
+Clone this repository (``git clone``), then build it with ``dotnet build -c Release`` command.
 
 You can also build and run directly, using ``dotnet run osu-replay-viewer``
 
@@ -208,20 +219,22 @@ To use hardware acceleration, you need:
 - Compatible hardware (Intel, AMD or NVIDIA GPUs)
 - Driver
 
-Simply add ``--ffmpeg-encoder h264_<qsv/amf/nvenc>`` or ``--ffmpeg-encoder hevc<qsv/amf/nvenc>`` to
+Simply add ``--ffmpeg-encoder h264_<qsv/amf/nvenc/videotoolbox>`` or ``--ffmpeg-encoder hevc<qsv/amf/nvenc/videotoolbox>`` to
 enable hardware encoding. (Eg: ``osu-replay-renderer --view local 1337 --record --ffmpeg-encoder h264_qsv``)
 
 Here is the table for hardware encoders:
-| Vendor | Encoder    | Codec | Note     |
-|--------|------------|-------|----------|
-| any    | libx264    | H.264 | Uses CPU |
-| Intel  | h264_qsv   | H.264 |          |
-| AMD    | h264_amf   | H.264 |          |
-| NVIDIA | h264_nvenc | H.264 |          |
-| any    | libx265    | HEVC  | Uses CPU |
-| Intel  | hevc_qsv   | HEVC  |          |
-| AMD    | hevc_amf   | HEVC  |          |
-| NVIDIA | hevc_nvenc | HEVC  |          |
+| Vendor | Encoder           | Codec | Note     |
+|--------|-------------------|-------|----------|
+| any    | libx264           | H.264 | Uses CPU |
+| Intel  | h264_qsv          | H.264 |          |
+| AMD    | h264_amf          | H.264 |          |
+| NVIDIA | h264_nvenc        | H.264 |          |
+| Apple  | h264_videotoolbox | H.264 |          |
+| any    | libx265           | HEVC  | Uses CPU |
+| Intel  | hevc_qsv          | HEVC  |          |
+| AMD    | hevc_amf          | HEVC  |          |
+| NVIDIA | hevc_nvenc        | HEVC  |          |
+| Apple  | hevc_videotoolbox | HEVC  |          |
 
 ## Planned
 This is the list of stuffs that I want to changes. It can be planned features or just revamp the code.
