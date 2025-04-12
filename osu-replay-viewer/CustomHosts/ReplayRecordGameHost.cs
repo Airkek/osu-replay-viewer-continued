@@ -80,7 +80,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         public AudioJournal AudioJournal { get; set; } = new();
         public AudioBuffer AudioTrack { get; set; } = null;
-        public string AudioOutput { get; set; } = null;
 
         private void PrepareAudioRendering()
         {

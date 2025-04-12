@@ -7,9 +7,53 @@ using System.Text;
 
 namespace osu_replay_renderer_netcore.Audio.Conversion
 {
-    public static class FFmpegAudioDecoder
+    public static class FFmpegAudioTools
     {
         public static string FFmpegExec = "ffmpeg";
+        
+        public static void WriteAudioToVideo(string video, AudioBuffer buff)
+        {
+            var tempFile = video + ".audio.mp4";
+
+            var args = $"-y -i \"{video}\" -i - -c:v copy -c:a aac -map 0:v -map 1:a \"{tempFile}\"";
+            Console.WriteLine($"Starting FFmpeg with arguments: {args}");
+
+            var ffmpeg = new Process
+            {
+                StartInfo =
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = false,
+                    FileName = FFmpegExec,
+                    Arguments = args,
+                    RedirectStandardInput = true
+                }
+            };
+
+            try
+            {
+                ffmpeg.Start();
+                buff.WriteWave(ffmpeg.StandardInput.BaseStream);
+                ffmpeg.StandardInput.Close();
+                ffmpeg.WaitForExit();
+            }
+            finally
+            {
+                if (ffmpeg.ExitCode == 0)
+                {
+                    File.Delete(video);
+                    File.Move(tempFile, video);
+                }
+                else
+                {
+                    Console.Error.WriteLine("Failed to add audio to video");
+                    if (File.Exists(tempFile))
+                    {
+                        File.Delete(tempFile);
+                    }
+                }
+            }
+        }
 
         public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, int outChannels = 2, int outRate = 44100)
         {

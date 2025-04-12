@@ -42,7 +42,6 @@ namespace osu_replay_renderer_netcore
             OptionDescription recordOutput;
             OptionDescription recordResolution;
             OptionDescription recordFPS;
-            OptionDescription recordAudioOutput;
 
             OptionDescription ffmpegType;
             OptionDescription ffmpegLibPath;
@@ -157,14 +156,6 @@ namespace osu_replay_renderer_netcore
                         SingleDash = new[] { "O" },
                         Parameters = new[] { "Output = osu-replay.mp4" },
                         ProcessedParameters = new[] { "osu-replay.mp4" }
-                    },
-                    recordAudioOutput = new()
-                    {
-                        Name = "Record Audio Output",
-                        Description = "Set record audio output (the file is always in RIFF Wave format)",
-                        DoubleDashes = new[] { "record-audio", "record-audio-output" },
-                        SingleDash = new[] { "AO" },
-                        Parameters = new[] { "Output = <--record-output>.wav" }
                     },
                     recordResolution = new()
                     {
@@ -342,13 +333,6 @@ namespace osu_replay_renderer_netcore
                 {
                     if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, recordOutput[0])) return;
 
-                    string audioOutput = null;
-                    if (patched)
-                    {
-                        audioOutput = recordAudioOutput.ProcessedParameters.Length > 0 ? recordAudioOutput[0] : (recordOutput[0] + ".wav");
-                        if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, audioOutput)) return;
-                    }
-
                     var fps = ParseIntOrThrow(recordFPS[0]);
                     var blending = ParseIntOrThrow(ffmpegFramesBlending[0]);
                     
@@ -391,7 +375,7 @@ namespace osu_replay_renderer_netcore
                     if (ffmpegExec.Triggered)
                     {
                         config.FFmpegExec = ffmpegExec[0];
-                        FFmpegAudioDecoder.FFmpegExec = ffmpegExec[0];
+                        FFmpegAudioTools.FFmpegExec = ffmpegExec[0];
                     }
 
                     switch (ffmpegType[0])
@@ -404,7 +388,6 @@ namespace osu_replay_renderer_netcore
                             recordHost.Encoder = new FFmpegAutoGenEncoder(config);
                             break;
                     }
-                    recordHost.AudioOutput = audioOutput;
                 }
                 else if (headlessMode.Triggered)
                 {

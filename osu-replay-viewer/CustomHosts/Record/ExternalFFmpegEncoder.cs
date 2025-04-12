@@ -74,22 +74,5 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             FFmpeg.Start();
             InputStream = FFmpeg.StandardInput.BaseStream;
         }
-
-        public void WriteAudio(string file)
-        {
-            var ffmpeg = new Process
-            {
-                StartInfo =
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow = false,
-                    FileName = FFmpegExec,
-                    Arguments = $"-y -i {OutputPath} -i {file} -c:v copy -c:a aac {OutputPath}.audio.mp4",
-                    RedirectStandardInput = false
-                }
-            };
-            ffmpeg.Start();
-            ffmpeg.WaitForExit();
-        }
     }
 }

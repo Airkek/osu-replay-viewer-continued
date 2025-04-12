@@ -375,7 +375,7 @@ namespace osu_replay_renderer_netcore
                     }
                 }
                 Logger.Log("Decoding audio...");
-                DecodedAudio = FFmpegAudioDecoder.Decode(GetCurrentBeatmapAudioPath(), speed, pitch);
+                DecodedAudio = FFmpegAudioTools.Decode(GetCurrentBeatmapAudioPath(), speed, pitch);
                 Logger.Log("Audio decoded!");
                 if (Host is ReplayRecordGameHost recordHost) recordHost.AudioTrack = DecodedAudio;
             }
@@ -492,14 +492,7 @@ namespace osu_replay_renderer_netcore
                                 if (recordHost.IsAudioPatched)
                                 {
                                     var buff = recordHost.FinishAudio();
-                                
-                                    var stream = new FileStream(recordHost.AudioOutput, FileMode.OpenOrCreate);
-                                    buff.WriteWave(stream);
-                                    stream.Close();
-                                    if (recordHost.Encoder is ExternalFFmpegEncoder enc)
-                                    {
-                                        enc.WriteAudio(recordHost.AudioOutput);
-                                    }
+                                    FFmpegAudioTools.WriteAudioToVideo(recordHost.Encoder.OutputPath, buff);
                                 }
                                 Console.WriteLine($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}");
                             }
