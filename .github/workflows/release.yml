@@ -9,9 +9,9 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        runtime: [win-x64, linux-x64]
         config: [Debug, Release]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,27 +21,14 @@ jobs:
         with:
           dotnet-version: 8.x
 
-      - name: Determine runtime
-        id: set-runtime
-        shell: bash
-        run: |
-          if [ "${{ runner.os }}" == "Windows" ]; then
-            echo "runtime=win-x64" >> $GITHUB_OUTPUT
-          else
-            echo "runtime=linux-x64" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Restore dependencies
-        run: dotnet restore
-
       - name: Build and Publish
         run: |
-          dotnet publish -c ${{ matrix.config }} -r ${{ steps.set-runtime.outputs.runtime }} --self-contained true -o publish
+          dotnet publish -c ${{ matrix.config }} -r ${{ matrix.runtime }} --self-contained true -o publish
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-${{ runner.os }}-${{ matrix.config }}-${{ steps.set-runtime.outputs.runtime }}
+          name: app-${{ matrix.config }}-${{ matrix.runtime }}
           path: publish/
 
   create-release:
@@ -60,7 +47,7 @@ jobs:
           mkdir -p release-assets
           for dir in artifacts/*/; do
             dir_name=$(basename "$dir")
-            if [[ "$dir_name" == *Windows* ]]; then
+            if [[ "$dir_name" == *win-x* ]]; then
               (cd "$dir" && zip -r "../../release-assets/${dir_name}.zip" .)
             else
               tar -czf "release-assets/${dir_name}.tar.gz" -C "$dir" .
