@@ -110,7 +110,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
             if (isAudioPatched)
             {
                 var buff = FinishAudio();
+                Console.WriteLine("Writing audio");
+                var sw = new Stopwatch();
+                sw.Start();
                 FFmpegAudioTools.WriteAudioToVideo(encoder.OutputPath, buff);
+                sw.Stop();
+                Console.WriteLine($"Writing audio done in {sw.ElapsedMilliseconds}ms");
             }
 
             _fpsContainer.Sort();
@@ -118,7 +123,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             var minFps = _fpsContainer[0];
             var maxFps = _fpsContainer.Last();
             var averageFps = _fpsContainer.Average();
-            Console.WriteLine($"Render finished in {timer.Elapsed:g}. FPS - Min: {minFps:F2}, Median: {medianFps:F2}, Max: {maxFps:F2} (Average: {averageFps:F2})");
+            Console.WriteLine(FormattableString.Invariant($"Render finished in {timer.Elapsed:g}. FPS - Min: {minFps:F2}, Median: {medianFps:F2}, Max: {maxFps:F2} (Average: {averageFps:F2})"));
         }
 
         private void PrepareAudioRendering()
@@ -324,7 +329,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             var fps = (double)diffFrames / (double)diffTime * 1000d;
             _fpsContainer.Add(fps);
-            Console.WriteLine($"Current fps: {fps:F2} (speed: {fps / encoder.FPS:F2}x)");
+            Console.WriteLine(FormattableString.Invariant($"Current fps: {fps:F2} (speed: {fps / encoder.FPS:F2}x)"));
         }
         
         private void OnDraw()
