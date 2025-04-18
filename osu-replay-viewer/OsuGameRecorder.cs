@@ -361,19 +361,14 @@ namespace osu_replay_renderer_netcore
 
             if (Host is ReplayRecordGameHost recordHost && recordHost.NeedAudio)
             {
-                double speed = 1;
-                double pitch = 1;
+                var speed = score.ScoreInfo.Mods.OfType<IApplicableToRate>().Aggregate<IApplicableToRate, double>(1, (current, rateMod) => rateMod.ApplyToRate(0, current));
+                var pitch = 1d;
                 foreach (var mod in score.ScoreInfo.Mods)
                 {
-                    if (mod is ModRateAdjust ra)
+                    if (mod is ModDaycore or ModNightcore or ModDoubleTime { AdjustPitch.Value: true } or ModHalfTime { AdjustPitch.Value: true })
                     {
-                        speed = ra.SpeedChange.Value;
-
-                        if (ra is ModDaycore or ModNightcore or ModDoubleTime { AdjustPitch.Value: true } or ModHalfTime { AdjustPitch.Value: true })
-                        {
-                            pitch = speed;
-                        } 
-                    }
+                        pitch = speed;
+                    } 
                 }
                 var volumeMusic = config.Get<double>(FrameworkSetting.VolumeMusic);
                 var volumeUniversal = config.Get<double>(FrameworkSetting.VolumeUniversal);
