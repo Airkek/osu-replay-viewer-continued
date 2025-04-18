@@ -17,11 +17,11 @@
   <ItemGroup>
     <PackageReference Include="FFmpeg.AutoGen" Version="4.3.0.1" />
     <PackageReference Include="Lib.Harmony" Version="2.3.5" />
-    <PackageReference Include="ppy.osu.Game" Version="2025.321.0" />
-    <PackageReference Include="ppy.osu.Game.Rulesets.Catch" Version="2025.321.0" />
-    <PackageReference Include="ppy.osu.Game.Rulesets.Mania" Version="2025.321.0" />
-    <PackageReference Include="ppy.osu.Game.Rulesets.Osu" Version="2025.321.0" />
-    <PackageReference Include="ppy.osu.Game.Rulesets.Taiko" Version="2025.321.0" />
+    <PackageReference Include="ppy.osu.Game" Version="2025.418.1" />
+    <PackageReference Include="ppy.osu.Game.Rulesets.Catch" Version="2025.418.1" />
+    <PackageReference Include="ppy.osu.Game.Rulesets.Mania" Version="2025.418.1" />
+    <PackageReference Include="ppy.osu.Game.Rulesets.Osu" Version="2025.418.1" />
+    <PackageReference Include="ppy.osu.Game.Rulesets.Taiko" Version="2025.418.1" />
     <PackageReference Include="SoundTouch.Net" Version="2.3.2" />
   </ItemGroup>
 
