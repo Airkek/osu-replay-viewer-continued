@@ -5,8 +5,6 @@ using osu.Game.Graphics.Sprites;
 using osu.Game.Graphics.UserInterface;
 using osu.Game.Screens.Play;
 using System.Linq;
-using osu_replay_renderer_netcore.CustomHosts;
-using osu.Framework.Platform;
 
 namespace osu_replay_renderer_netcore
 {
@@ -17,11 +15,6 @@ namespace osu_replay_renderer_netcore
         public RecorderReplayPlayerLoader(RecorderReplayPlayer player) : base(() => player)
         {
             this.player = player;
-        }
-
-        protected override void OnPlayerLoaded()
-        {
-            base.OnPlayerLoaded();
         }
 
         protected override void LoadComplete()

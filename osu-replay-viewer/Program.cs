@@ -324,21 +324,19 @@ namespace osu_replay_renderer_netcore
                             clock.ChangeSource(new WrappedClock(recordClock, clock.Source as StopwatchClock));
                         };
                     }
-                    var recordHost = new ReplayRecordGameHost(gameName, recordClock, patched);
-                    host = recordHost;
 
-                    recordHost.Resolution = new Size
+                    var resolution = new Size
                     {
                         Width = ParseIntOrThrow(recordResolution[0]),
                         Height = ParseIntOrThrow(recordResolution[1])
                     };
 
-                    recordHost.RendererType = ParseRenderer(recordRenderer[0]);
+                    var rendererType = ParseRenderer(recordRenderer[0]);
 
                     var config = new EncoderConfig
                     {
                         FPS = fps,
-                        Resolution = recordHost.Resolution,
+                        Resolution = resolution,
                         OutputPath = recordOutput[0],
                         Preset = ffmpegPreset[0],
                         Encoder = ffmpegVideoEncoder[0],
@@ -360,21 +358,23 @@ namespace osu_replay_renderer_netcore
                         FFmpegAudioTools.FFmpegExec = ffmpegExec[0];
                     }
 
-                    switch (ffmpegType[0])
+                    EncoderBase encoder = ffmpegType[0] switch
                     {
-                        case "pipe":
-                        case "external":
-                            recordHost.Encoder = new ExternalFFmpegEncoder(config);
-                            break;
-                        case "bindings":
-                            recordHost.Encoder = new FFmpegAutoGenEncoder(config);
-                            break;
-                    }
+                        "pipe" or "external" => new ExternalFFmpegEncoder(config),
+                        "bindings" => new FFmpegAutoGenEncoder(config),
+                        _ => throw new CLIException
+                        {
+                            Cause = "Command-line Arguments (Parsing)",
+                            DisplayMessage = $"Value {ffmpegType[0]} is invaild"
+                        }
+                    };
+
+                    host = new ReplayRecordGameHost(gameName, encoder, recordClock, rendererType, patched);
                 }
-                else host = Host.GetSuitableDesktopHost(gameName, new HostOptions
+                else
                 {
-                    //BindIPC = false
-                });
+                    host = Host.GetSuitableDesktopHost(gameName);
+                }
                 
                 game = new OsuGameRecorder();
                 game.ModsOverride = modsOverride;
@@ -492,7 +492,6 @@ namespace osu_replay_renderer_netcore
                 return;
             }
 
-            if (recordMode.Triggered) game.DecodeAudio = true;
             host.Run(game);
             host.Dispose();
         }

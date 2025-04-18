@@ -22,6 +22,7 @@ using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -53,13 +54,11 @@ namespace osu_replay_renderer_netcore
         public int ReplayAutoBeatmapID;
         public string ReplayFileLocation;
 
-        public bool DecodeAudio { get; set; } = false;
         public SkinAction SkinActionType { get; set; } = SkinAction.Select;
         public string Skin { get; set; } = string.Empty;
 
         public string BeatmapPath { get; set; } = string.Empty;
         
-        public AudioBuffer DecodedAudio;
         public bool HideOverlaysInPlayer = false;
 
         private DependencyContainer dependencies;
@@ -331,6 +330,7 @@ namespace osu_replay_renderer_netcore
 
         private void LoadViewer(Score score)
         {
+            var sw = new Stopwatch();            
             // Apply some stuffs
             config.SetValue(FrameworkSetting.ConfineMouseMode, ConfineMouseMode.Never);
             if (Host is not ReplayRecordGameHost)
@@ -358,8 +358,8 @@ namespace osu_replay_renderer_netcore
             working.LoadTrack();
             Beatmap.Value = working;
             SelectedMods.Value = score.ScoreInfo.Mods;
-            
-            if (DecodeAudio)
+
+            if (Host is ReplayRecordGameHost recordHost && recordHost.NeedAudio)
             {
                 double speed = 1;
                 double pitch = 1;
@@ -375,12 +375,15 @@ namespace osu_replay_renderer_netcore
                         } 
                     }
                 }
-                Logger.Log("Decoding audio...");
                 var volumeMusic = config.Get<double>(FrameworkSetting.VolumeMusic);
                 var volumeUniversal = config.Get<double>(FrameworkSetting.VolumeUniversal);
-                DecodedAudio = FFmpegAudioTools.Decode(GetCurrentBeatmapAudioPath(), tempoFactor: speed, pitchFactor: pitch, volume: volumeMusic * volumeUniversal);
-                Logger.Log("Audio decoded!");
-                if (Host is ReplayRecordGameHost recordHost) recordHost.AudioTrack = DecodedAudio;
+                
+                Console.WriteLine("Decoding audio...");
+                sw.Restart();
+                var track = FFmpegAudioTools.Decode(GetCurrentBeatmapAudioPath(), tempoFactor: speed, pitchFactor: pitch, volume: volumeMusic * volumeUniversal);
+                sw.Stop();
+                Console.WriteLine($"Audio decoded in {sw.ElapsedMilliseconds}ms");
+                recordHost.SetAudioTrack(track);
             }
             
             Player = new RecorderReplayPlayer(score)
@@ -412,10 +415,14 @@ namespace osu_replay_renderer_netcore
                 LocalConfig.GetBindable<bool>(OsuSetting.BeatmapSkins).Value = false;
                 LocalConfig.GetBindable<bool>(OsuSetting.BeatmapHitsounds).Value = false;
             }
-
-            RecorderReplayPlayerLoader loader = new RecorderReplayPlayerLoader(Player);
+            
+            Console.WriteLine("Loading player");
+            sw.Restart();
+            var loader = new RecorderReplayPlayerLoader(Player);
             loader.OnLoadComplete += _ =>
             {
+                sw.Stop();
+                Console.WriteLine($"Player loaded in {sw.ElapsedMilliseconds}ms");
                 if (Host is ReplayRecordGameHost record)
                 {
                     record.StartRecording();
@@ -481,18 +488,7 @@ namespace osu_replay_renderer_netcore
                     {
                         Scheduler.AddDelayed(() =>
                         {
-                            if (Host is ReplayRecordGameHost recordHost)
-                            {
-                                recordHost.Encoder.Finish();
-                                recordHost.Timer.Stop();
-
-                                if (recordHost.IsAudioPatched)
-                                {
-                                    var buff = recordHost.FinishAudio();
-                                    FFmpegAudioTools.WriteAudioToVideo(recordHost.Encoder.OutputPath, buff);
-                                }
-                                Console.WriteLine($"Render finished in {recordHost.Timer.Elapsed}. Average FPS: {recordHost.Frames / (recordHost.Timer.ElapsedMilliseconds / 1000d)}");
-                            }
+                            (Host as ReplayRecordGameHost)?.FinishRecording();
                             Exit();
                         }, 11000);
                     }

@@ -31,6 +31,11 @@ public class VeldridDeviceWrapper : RenderWrapper
     private readonly IGraphicsSurface graphicsSurface;
     private readonly GraphicsDevice Device;
 
+    public static bool IsSupported(IRenderer renderer)
+    {
+        return renderer.GetType() == VeldridRendererType || renderer.GetType() == DeferredRendererType;
+    }
+
     public VeldridDeviceWrapper(IRenderer renderer, Size desiredSize) : base(desiredSize)
     {
         object veldridDevice;

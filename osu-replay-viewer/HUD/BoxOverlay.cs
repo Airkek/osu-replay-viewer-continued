@@ -17,7 +17,7 @@ namespace osu_replay_renderer_netcore.HUD
     /// Performance points graph. This HUD is the PP graph, which shows historical PP
     /// data (it might store some future data if you use seeking feature)
     /// </summary>
-    public abstract class BoxOverlay : FillFlowContainer
+    public abstract partial class BoxOverlay : FillFlowContainer
     {
         public BoxOverlay(string title)
         {

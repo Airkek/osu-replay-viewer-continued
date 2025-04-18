@@ -1,6 +1,6 @@
 ﻿using HarmonyLib;
 using System;
-using osu.Framework.Audio.Track;
+using System.Diagnostics;
 using osu.Framework.Timing;
 
 namespace osu_replay_renderer_netcore.Patching
@@ -18,7 +18,7 @@ namespace osu_replay_renderer_netcore.Patching
         {
             static void Postfix(FramedClock __instance)
             {
-                if (__instance.Source is StopwatchClock or null)
+                if (__instance.Source is Stopwatch or null)
                 {
                     TriggerOnStopwatchClockSetAsSource(__instance);
                 }
@@ -31,7 +31,7 @@ namespace osu_replay_renderer_netcore.Patching
         {
             static void Postfix(InterpolatingFramedClock __instance)
             {
-                if (__instance.Source is StopwatchClock or null)
+                if (__instance.Source is Stopwatch or null)
                 {
                     TriggerOnStopwatchClockSetAsSource(__instance);
                 }
@@ -45,7 +45,7 @@ namespace osu_replay_renderer_netcore.Patching
         {
             static void Postfix(DecouplingFramedClock __instance)
             {
-                if (__instance.Source is StopwatchClock or null)
+                if (__instance.Source is Stopwatch or null)
                 {
                     TriggerOnStopwatchClockSetAsSource(__instance);
                 }

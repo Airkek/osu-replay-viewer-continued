@@ -18,6 +18,11 @@ public class GLRendererWrapper : RenderWrapper
 
     private readonly IGraphicsSurface surface;
     private readonly IOpenGLGraphicsSurface openGLSurface;
+    
+    public static bool IsSupported(IRenderer renderer)
+    {
+        return renderer.GetType() == GLRendererType;
+    }
 
     public GLRendererWrapper(IRenderer renderer, Size desiredSize) : base(desiredSize)
     {
