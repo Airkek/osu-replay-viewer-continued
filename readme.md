@@ -69,10 +69,10 @@ This replay viewer is not guranteed to works on platforms other than Windows and
 Output of ``osu-replay-viewer --help``:
 ```
 Usage:
-  dotnet run osu-replay-renderer [options...]
-  osu-replay-renderer [options...]
+  dotnet run osu-replay-viewer [options...]
+  osu-replay-viewer [options...]
 
-  --yes
+  --yes                   
     Always Yes
     Always answer yes to all prompts. Similar to 'command | yes'
 
@@ -176,6 +176,11 @@ Usage:
     FFmpeg Global Quality
     Set the max bitrate for output video
 
+  --ffmpeg-show-output
+    Alternatives: -FSO
+    Show ffmpeg output
+    Show ffmpeg output (applicable only to external ffmpeg)
+
   --experimental           <Flag>
     Alternatives: -experimental
     Experimental Toggle
@@ -195,7 +200,6 @@ Usage:
     Alternatives: --list-skins, -lskins, -lskin
     List Skins
     List all available skins
-
 ```
 
 ## Build

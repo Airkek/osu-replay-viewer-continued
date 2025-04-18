@@ -10,6 +10,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
     public static class FFmpegAudioTools
     {
         public static string FFmpegExec = "ffmpeg";
+        public static bool ShowOutput = false;
         
         public static void WriteAudioToVideo(string video, AudioBuffer buff)
         {
@@ -23,7 +24,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                 StartInfo =
                 {
                     UseShellExecute = false,
-                    CreateNoWindow = false,
+                    CreateNoWindow = !ShowOutput,
                     FileName = FFmpegExec,
                     Arguments = args,
                     RedirectStandardInput = true
@@ -97,7 +98,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                     Arguments = args.ToString(),
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
-                    CreateNoWindow = true
+                    CreateNoWindow = !ShowOutput
                 }
             };
 

@@ -113,7 +113,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 Console.WriteLine("Writing audio");
                 var sw = new Stopwatch();
                 sw.Start();
-                FFmpegAudioTools.WriteAudioToVideo(encoder.OutputPath, buff);
+                FFmpegAudioTools.WriteAudioToVideo(encoder.Config.OutputPath, buff);
                 sw.Stop();
                 Console.WriteLine($"Writing audio done in {sw.ElapsedMilliseconds}ms");
             }
@@ -206,7 +206,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
 
             SetupRendererAndWindow(rendererStr, GraphicsSurfaceType.OpenGL);
-            wrapper = CreateWrapper(Renderer, encoder.Resolution);
+            wrapper = CreateWrapper(Renderer, encoder.Config.Resolution);
             if (wrapper is null)
             {
                 Console.Error.WriteLine($"Cannot create wrapper for renderer: {Renderer.GetType()}");
@@ -284,11 +284,11 @@ namespace osu_replay_renderer_netcore.CustomHosts
             if (RuntimeInfo.IsApple)
             {
                 // Retina display
-                Config.SetValue(FrameworkSetting.WindowedSize, encoder.Resolution / 2);
+                Config.SetValue(FrameworkSetting.WindowedSize, encoder.Config.Resolution / 2);
             }
             else
             {
-                Config.SetValue(FrameworkSetting.WindowedSize, encoder.Resolution);
+                Config.SetValue(FrameworkSetting.WindowedSize, encoder.Config.Resolution);
             }
             Config.SetValue(FrameworkSetting.WindowMode, WindowMode.Windowed);
             
@@ -329,7 +329,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             var fps = (double)diffFrames / (double)diffTime * 1000d;
             _fpsContainer.Add(fps);
-            Console.WriteLine(FormattableString.Invariant($"Current fps: {fps:F2} (speed: {fps / encoder.FPS:F2}x)"));
+            Console.WriteLine(FormattableString.Invariant($"Current fps: {fps:F2} (speed: {fps / encoder.Config.FPS:F2}x)"));
         }
         
         private void OnDraw()

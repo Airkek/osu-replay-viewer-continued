@@ -19,26 +19,29 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         public FFmpegAutoGenEncoder(EncoderConfig config) : base(config)
         {
-            ffmpeg.RootPath = FFmpegPath;
+            if (!string.IsNullOrWhiteSpace(Config.FFmpegPath))
+            {
+                ffmpeg.RootPath = Config.FFmpegPath;
+            }
         }
 
 
         private byte[] _pixelBuffer;
         protected override void _startInternal()
         {
-            _pixelBuffer = ArrayPool<byte>.Shared.Rent(Resolution.Width * Resolution.Height * 3); // RGB24
+            _pixelBuffer = ArrayPool<byte>.Shared.Rent(Config.Resolution.Width * Config.Resolution.Height * 3); // RGB24
             
             ffmpeg.avformat_network_init();
 
             // Allocate output format context
-            fixed (AVFormatContext** ctx = &_formatContext) ffmpeg.avformat_alloc_output_context2(ctx, null, null, OutputPath);
+            fixed (AVFormatContext** ctx = &_formatContext) ffmpeg.avformat_alloc_output_context2(ctx, null, null, Config.OutputPath);
             if (_formatContext == null)
                 throw new InvalidOperationException("Could not create output context");
 
             // Find encoder
-            AVCodec* codec = ffmpeg.avcodec_find_encoder_by_name(Encoder);
+            AVCodec* codec = ffmpeg.avcodec_find_encoder_by_name(Config.Encoder);
             if (codec == null)
-                throw new InvalidOperationException($"Codec {Encoder} not found");
+                throw new InvalidOperationException($"Codec {Config.Encoder} not found");
 
             // Create video stream
             _videoStream = ffmpeg.avformat_new_stream(_formatContext, codec);
@@ -49,19 +52,19 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             if (_codecContext == null)
                 throw new InvalidOperationException("Failed to allocate codec context");
 
-            _bitrate = ParseBitrate(Bitrate);
+            _bitrate = ParseBitrate(Config.Bitrate);
             _codecContext->bit_rate = _bitrate;
-            _codecContext->width = Resolution.Width;
-            _codecContext->height = Resolution.Height;
-            _codecContext->time_base = new AVRational { num = 1, den = FPS };
-            _codecContext->framerate = new AVRational { num = FPS, den = 1 };
+            _codecContext->width = Config.Resolution.Width;
+            _codecContext->height = Config.Resolution.Height;
+            _codecContext->time_base = new AVRational { num = 1, den = Config.FPS };
+            _codecContext->framerate = new AVRational { num = Config.FPS, den = 1 };
             _codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
             _codecContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
 
             // Set encoder options
             var dict = new Dictionary<string, string>();
-            dict["preset"] = Preset;
-            switch (Encoder)
+            dict["preset"] = Config.Preset;
+            switch (Config.Encoder)
             {
                 case "h264_nvenc":
                     dict["rc"] = "constqp";
@@ -98,12 +101,12 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
             // Setup SWS for RGB24->YUV420P
             _swsContext = ffmpeg.sws_getContext(
-                Resolution.Width, Resolution.Height, AVPixelFormat.AV_PIX_FMT_RGB24,
-                Resolution.Width, Resolution.Height, AVPixelFormat.AV_PIX_FMT_YUV420P,
+                Config.Resolution.Width, Config.Resolution.Height, AVPixelFormat.AV_PIX_FMT_RGB24,
+                Config.Resolution.Width, Config.Resolution.Height, AVPixelFormat.AV_PIX_FMT_YUV420P,
                 ffmpeg.SWS_POINT, null, null, null);
 
             // Open output file
-            if (ffmpeg.avio_open(&_formatContext->pb, OutputPath, ffmpeg.AVIO_FLAG_WRITE) < 0)
+            if (ffmpeg.avio_open(&_formatContext->pb, Config.OutputPath, ffmpeg.AVIO_FLAG_WRITE) < 0)
                 throw new InvalidOperationException("Could not open output file");
 
             // Write header
@@ -121,12 +124,12 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                     Buffer.MemoryCopy(framePtr, srcPtr, frame.Length, frame.Length);
                 }
                 
-                int srcStride = Resolution.Width * 3;
-                byte*[] srcData = { srcPtr + (Resolution.Height - 1) * srcStride, null, null, null };
+                int srcStride = Config.Resolution.Width * 3;
+                byte*[] srcData = { srcPtr + (Config.Resolution.Height - 1) * srcStride, null, null, null };
                 int[] srcStrideArray = { -srcStride, 0, 0, 0 };
 
                 // Convert to YUV420P with vertical flip
-                ffmpeg.sws_scale(_swsContext, srcData, srcStrideArray, 0, Resolution.Height,
+                ffmpeg.sws_scale(_swsContext, srcData, srcStrideArray, 0, Config.Resolution.Height,
                     _frame->data, _frame->linesize);
 
                 _frame->pts = _pts++;

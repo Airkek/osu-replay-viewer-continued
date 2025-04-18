@@ -47,6 +47,7 @@ namespace osu_replay_renderer_netcore
             OptionDescription ffmpegMotionInterpolation;
             OptionDescription ffmpegVideoEncoder;
             OptionDescription ffmpegBitrate;
+            OptionDescription ffmpegShowOutput;
 
             OptionDescription experimental;
             OptionDescription overrideOverlayOptions;
@@ -189,6 +190,7 @@ namespace osu_replay_renderer_netcore
                         DoubleDashes = new[] { "ffmpeg-exec" },
                         SingleDash = new[] { "FEXE" },
                         Parameters = new[] { "Path" },
+                        ProcessedParameters = new[] { "ffmpeg" }
                     },
                     ffmpegPreset = new()
                     {
@@ -232,6 +234,13 @@ namespace osu_replay_renderer_netcore
                         SingleDash = new[] { "FQ" },
                         Parameters = new[] { "Bitrate = 100M" },
                         ProcessedParameters = new[] { "100M" }
+                    },
+                    ffmpegShowOutput = new()
+                    {
+                        Name = "Show ffmpeg output",
+                        Description = "Show ffmpeg output (applicable only to external ffmpeg)",
+                        DoubleDashes = new[] { "ffmpeg-show-output" },
+                        SingleDash = new[] { "FSO" }
                     },
 
                     // Misc
@@ -295,8 +304,8 @@ namespace osu_replay_renderer_netcore
                 if (args.Length == 0 || generalHelp.Triggered)
                 {
                     Console.WriteLine("Usage:");
-                    Console.WriteLine("  dotnet run osu-replay-renderer [options...]");
-                    Console.WriteLine("  osu-replay-renderer [options...]");
+                    Console.WriteLine("  dotnet run osu-replay-viewer [options...]");
+                    Console.WriteLine("  osu-replay-viewer [options...]");
                     Console.WriteLine();
                     cli.PrintHelp(generalHelp.Triggered, query.Triggered ? query[0] : null);
                     return;
@@ -341,21 +350,22 @@ namespace osu_replay_renderer_netcore
                         Preset = ffmpegPreset[0],
                         Encoder = ffmpegVideoEncoder[0],
                         Bitrate = ffmpegBitrate[0],
+                        
+                        // External only
+                        FFmpegExec = ffmpegExec[0],
+                        ShowFFmpegOutput = ffmpegShowOutput.Triggered,
 
-                        // Smoothing options
+                        // Smoothing options (external only atm)
                         FramesBlending = blending,
                         MotionInterpolation = ffmpegMotionInterpolation.Triggered,
                     };
+                    
+                    FFmpegAudioTools.FFmpegExec = ffmpegExec[0];
+                    FFmpegAudioTools.ShowOutput = ffmpegShowOutput.Triggered;
 
                     if (ffmpegLibPath.Triggered)
                     {
                         config.FFmpegPath = ffmpegLibPath[0];
-                    }
-                    
-                    if (ffmpegExec.Triggered)
-                    {
-                        config.FFmpegExec = ffmpegExec[0];
-                        FFmpegAudioTools.FFmpegExec = ffmpegExec[0];
                     }
 
                     EncoderBase encoder = ffmpegType[0] switch

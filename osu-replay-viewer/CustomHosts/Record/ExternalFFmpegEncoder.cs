@@ -12,17 +12,17 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         {
             get
             {
-                var actualFramesBlending = Math.Max(FramesBlending, 1);
+                var actualFramesBlending = Math.Max(Config.FramesBlending, 1);
 
-                var inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Resolution.Width}x{Resolution.Height} -r {FPS * actualFramesBlending} -i pipe:";
+                var inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS * actualFramesBlending} -i pipe:";
 
                 var inputEffect = string.Empty;
-                if (actualFramesBlending > 1) inputEffect = $"-vf tblend=all_mode=average -r {FPS}";
-                else if (MotionInterpolation) inputEffect = $"-vf minterpolate=fps={FPS * 4}";
+                if (actualFramesBlending > 1) inputEffect = $"-vf tblend=all_mode=average -r {Config.FPS}";
+                else if (Config.MotionInterpolation) inputEffect = $"-vf minterpolate=fps={Config.FPS * 4}";
 
                 var encoderSpecific = string.Empty;
 
-                switch (Encoder)
+                switch (Config.Encoder)
                 {
                     case "h264_nvenc":
                         encoderSpecific = "-rc constqp -qp 21";
@@ -35,7 +35,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                         break;
                 }
                 
-                var outputParameters = $"-c:v {Encoder} -vf \"vflip\" {encoderSpecific} -pix_fmt yuv420p -preset {Preset} {OutputPath}";
+                var outputParameters = $"-c:v {Config.Encoder} -vf \"vflip\" {encoderSpecific} -pix_fmt yuv420p -preset {Config.Preset} {Config.OutputPath}";
                 return inputParameters + (string.IsNullOrWhiteSpace(inputEffect)? (" " + inputEffect) : "") + " " + outputParameters;
             }
         }
@@ -65,8 +65,8 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 StartInfo =
                 {
                     UseShellExecute = false,
-                    CreateNoWindow = false,
-                    FileName = FFmpegExec,
+                    CreateNoWindow = !Config.ShowFFmpegOutput,
+                    FileName = Config.FFmpegExec,
                     Arguments = FFmpegArguments,
                     RedirectStandardInput = true
                 }

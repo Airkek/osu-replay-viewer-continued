@@ -15,36 +15,19 @@ public struct EncoderConfig
     public int FramesBlending;
     public string FFmpegPath;
     public string FFmpegExec;
+    public bool ShowFFmpegOutput;
 }
 
 public abstract class EncoderBase
 {
     private readonly object WriteLocker = new();
 
-    public readonly int FPS;
-    public readonly Size Resolution;
-    public readonly string OutputPath;
-    public readonly string Preset;
-    public readonly string Encoder;
-    public readonly string Bitrate;
-    public readonly bool MotionInterpolation;
-    public readonly int FramesBlending;
-    public readonly string FFmpegPath; 
-    public readonly string FFmpegExec; 
+    public readonly EncoderConfig Config;
     public abstract bool CanWrite { get; }
 
     public EncoderBase(EncoderConfig config)
     {
-        FPS = config.FPS;
-        Resolution = config.Resolution;
-        OutputPath = config.OutputPath;
-        Preset = config.Preset;
-        Encoder = config.Encoder;
-        Bitrate = config.Bitrate;
-        MotionInterpolation = config.MotionInterpolation;
-        FramesBlending = config.FramesBlending;
-        FFmpegPath = config.FFmpegPath;
-        FFmpegExec = config.FFmpegExec ?? "ffmpeg";
+        Config = config;
     }
 
     protected abstract void _writeFrameInternal(ReadOnlySpan<byte> frame);
