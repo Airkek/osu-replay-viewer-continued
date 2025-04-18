@@ -15,7 +15,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
         {
             var tempFile = video + ".audio.mp4";
 
-            var args = $"-y -i \"{video}\" -i - -c:v copy -c:a aac -map 0:v -map 1:a \"{tempFile}\"";
+            var args = $"-y -i \"{video}\" -i - -c:v copy -c:a aac -b:a 256k -ar {buff.Format.SampleRate} -map 0:v -map 1:a \"{tempFile}\"";
             Console.WriteLine($"Starting FFmpeg with arguments: {args}");
 
             var ffmpeg = new Process
@@ -55,7 +55,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             }
         }
 
-        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 44100)
+        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 48000)
         {
             var filters = new List<string>();
 

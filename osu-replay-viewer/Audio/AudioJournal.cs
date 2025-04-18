@@ -37,14 +37,14 @@ namespace osu_replay_renderer_netcore.Audio
             if (bass.SampleId == 0) return;
 
             AudioBuffer buff;
-            if (!CachedSampleBuffers.ContainsKey(bass.SampleId))
+            if (!CachedSampleBuffers.TryGetValue(bass.SampleId, out var buffer))
             {
                 buff = bass.AsAudioBuffer();
                 if (buff == null) return;
 
                 CachedSampleBuffers.Add(bass.SampleId, buff);
             }
-            else buff = CachedSampleBuffers[bass.SampleId];
+            else buff = buffer;
             BufferAt(t, buff, process);
         }
 
