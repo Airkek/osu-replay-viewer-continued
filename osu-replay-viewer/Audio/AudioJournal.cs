@@ -3,6 +3,7 @@ using osu.Framework.Audio.Track;
 using osu.Framework.Graphics.Audio;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace osu_replay_renderer_netcore.Audio
 {
@@ -16,9 +17,14 @@ namespace osu_replay_renderer_netcore.Audio
     {
         public readonly List<JournalElement> JournalElements = new();
         public readonly Dictionary<int, AudioBuffer> CachedSampleBuffers = new();
-        public readonly Dictionary<int, AudioBuffer> CachedTrackBuffers = new();
 
-        public double LongestDuration { get; private set; } = 0;
+        public double LongestDuration
+        {
+            get
+            {
+                return JournalElements.Select(x => x.Time + x.Buffer.Duration).Max();
+            }
+        }
 
         public void SampleAt(double t, ISample sample, Func<AudioBuffer, AudioBuffer> process = null)
         {
@@ -52,7 +58,6 @@ namespace osu_replay_renderer_netcore.Audio
         {
             if (process != null) buff = process(buff);
             JournalElements.Add(new JournalElement { Time = t, Buffer = buff });
-            if (LongestDuration < t + buff.Duration) LongestDuration = t + buff.Duration;
         }
 
         public void MixSamples(AudioBuffer buffer)
@@ -64,7 +69,6 @@ namespace osu_replay_renderer_netcore.Audio
         public void Reset()
         {
             JournalElements.Clear();
-            LongestDuration = 0;
         }
 
         public struct JournalElement

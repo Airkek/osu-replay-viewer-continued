@@ -20,7 +20,7 @@ namespace osu_replay_renderer_netcore.Audio
         /// Number of samples in this buffer. Divide by sample rate and you got
         /// the buffer duration.
         /// </summary>
-        public readonly int Samples;
+        public int Samples { get; private set; }
 
         /// <summary>
         /// The buffer duration in seconds
@@ -54,6 +54,11 @@ namespace osu_replay_renderer_netcore.Audio
                 return Data[Format.Channels * index + channel];
             }
             set => Data[Format.Channels * index + channel] = value;
+        }
+        
+        public void SetDuration(double newDuration)
+        {
+            Samples = (int)(Format.SampleRate * newDuration);
         }
 
         public float InterpolateAt(double t, int channel)

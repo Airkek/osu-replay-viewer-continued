@@ -1,7 +1,7 @@
 ﻿using osu.Framework.Bindables;
 using osu.Framework.Graphics;
 using osu.Framework.Testing;
-using osu.Framework.Timing;
+using osu.Framework.Screens;
 using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Difficulty;
 using osu.Game.Rulesets.Judgements;
@@ -17,7 +17,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
-using osu.Game.Rulesets.Osu;
 using osu.Game.Rulesets.Osu.UI;
 using osu.Game.Rulesets.Osu.UI.Cursor;
 using osu.Game.Skinning;
@@ -33,6 +32,19 @@ namespace osu_replay_renderer_netcore
         public RecorderReplayPlayer(Score score) : base(score)
         {
             GivenScore = score;
+        }
+
+        public Action OnFailed;
+
+        protected override void OnFail()
+        {
+            OnFailed?.Invoke();
+            this.Push(CreateResults(GivenScore.ScoreInfo));
+        }
+        
+        protected override bool CheckModsAllowFailure()
+        {
+            return GameplayState.Mods.OfType<IApplicableFailOverride>().All((Func<IApplicableFailOverride, bool>) (m => m.PerformFail()));
         }
 
         protected override void LoadComplete()

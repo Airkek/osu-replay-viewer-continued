@@ -391,6 +391,11 @@ namespace osu_replay_renderer_netcore
                 HideOverlays = HideOverlaysInPlayer
             };
 
+            Player.OnFailed += () =>
+            {
+                (Host as ReplayRecordGameHost)?.AudioEnded();
+            };
+
             if (!string.IsNullOrEmpty(Skin))
             {
                 Live<SkinInfo> skin;

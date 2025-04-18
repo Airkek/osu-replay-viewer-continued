@@ -53,6 +53,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private readonly AudioJournal audioJournal = new();
         private AudioBuffer audioTrack = null;
+        private bool isAudioPlayed = false;
+        private double audioPlayedTime = 0;
         public bool NeedAudio => isAudioPatched && audioTrack is null;
         
         private readonly GlRenderer rendererType;
@@ -78,6 +80,20 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public void SetAudioTrack(AudioBuffer track)
         {
             audioTrack = track;
+        }
+
+        public void AudioEnded()
+        {
+            if (!isAudioPatched || !isAudioPlayed)
+            {
+                return;
+            }
+
+            var time = recordClock.CurrentTime;
+            Console.WriteLine($"Cropping audio on frame #{recordClock.CurrentFrame}");
+
+            var newDuration = time - audioPlayedTime;
+            audioTrack.SetDuration(newDuration / 1000);
         }
 
         public void StartRecording()
@@ -113,6 +129,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
             AudioPatcher.OnTrackPlay += track =>
             {
+                if (isAudioPlayed)
+                {
+                    return;
+                }
+                isAudioPlayed = true;
+                audioPlayedTime = recordClock.CurrentTime;
                 Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
                 if (audioTrack is not null && audioJournal is not null)
                 {
@@ -220,12 +242,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
             audioJournal.MixSamples(buff);
             buff.Process(x => Math.Tanh(x));
             return buff;
-        }
-
-        protected override void SetupConfig(IDictionary<FrameworkSetting, object> defaultOverrides)
-        {
-            //defaultOverrides[FrameworkSetting.AudioDevice] = "No sound";
-            base.SetupConfig(defaultOverrides);
         }
 
         protected override void SetupForRun()
