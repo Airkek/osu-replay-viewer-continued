@@ -27,11 +27,21 @@ namespace osu_replay_renderer_netcore
     {
         public Score GivenScore { get; private set; }
         public bool ManipulateClock { get; set; } = false;
-        public bool HideOverlays { get; set; } = false;
+        public bool HideOverlays { get; private set; } = false;
 
-        public RecorderReplayPlayer(Score score) : base(score)
+        public RecorderReplayPlayer(Score score, bool hideOverlays) : base(score, new PlayerConfiguration
+        {
+            AllowRestart = false,
+            AllowPause = false,
+            AllowFailAnimation = true,
+            AllowUserInteraction = !hideOverlays,
+            AlwaysShowLeaderboard = false,
+            AllowSkipping = !hideOverlays,
+            AutomaticallySkipIntro = false
+        })
         {
             GivenScore = score;
+            HideOverlays = hideOverlays;
         }
 
         public Action OnFailed;
@@ -60,15 +70,7 @@ namespace osu_replay_renderer_netcore
             }
 
             var game = Game as OsuGameRecorder;
-            if (DrawableRuleset is DrawableOsuRuleset)
-            {
-                var cursorContainer = DrawableRuleset.Playfield.Cursor as OsuCursorContainer;
-                FieldInfo cursorTrailField = typeof(OsuCursorContainer)
-                    .GetField("cursorTrail", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                var trail = cursorTrailField.GetValue(cursorContainer) as SkinnableDrawable;
-                (trail).Clock = Clock;
-            }
-            
+
             if (
                 game.ExperimentalFlags.Contains("performance-graph") ||
                 game.ExperimentalFlags.Contains("performance-points-graph") ||

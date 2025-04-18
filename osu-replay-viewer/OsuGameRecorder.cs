@@ -380,11 +380,8 @@ namespace osu_replay_renderer_netcore
                 Console.WriteLine($"Audio decoded in {sw.ElapsedMilliseconds}ms");
                 recordHost.SetAudioTrack(track);
             }
-            
-            Player = new RecorderReplayPlayer(score)
-            {
-                HideOverlays = HideOverlaysInPlayer
-            };
+
+            Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer);
 
             Player.OnFailed += () =>
             {
