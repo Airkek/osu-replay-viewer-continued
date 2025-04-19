@@ -35,7 +35,12 @@ namespace osu_replay_renderer_netcore.Audio
                 PCMSize = info.OriginalResolution / 8
             };
 
-            if (format.PCMSize == 0 || format.Channels == 0) return null;
+            if (format.Channels == 0) return null;
+
+            if (format.PCMSize == 0)
+            {
+                format.PCMSize = 2;
+            }
 
             var samples = info.Length / format.PCMSize / format.Channels;
             var bytes = new byte[info.Length];

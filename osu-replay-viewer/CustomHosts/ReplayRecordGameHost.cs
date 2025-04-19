@@ -149,9 +149,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             AudioPatcher.OnSamplePlay += sample =>
             {
-                if (sample is not null && audioJournal is not null)
+                if (sample is null || audioJournal is null)
                 {
-                    audioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
+                    return;
+                }
+
+                audioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
                     {
                         buff = buff.CreateCopy();
                         if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
@@ -161,7 +164,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
                         buff.Process(x => x * sample.Volume.Value * sample.AggregateVolume.Value);
                         return buff;
                     });
-                }
             };
         }
 
