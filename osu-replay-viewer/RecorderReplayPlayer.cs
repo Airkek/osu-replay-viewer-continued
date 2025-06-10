@@ -35,7 +35,7 @@ namespace osu_replay_renderer_netcore
             AllowPause = false,
             AllowFailAnimation = true,
             AllowUserInteraction = !hideOverlays,
-            AlwaysShowLeaderboard = false,
+            ShowLeaderboard = false,
             AllowSkipping = !hideOverlays,
             AutomaticallySkipIntro = false
         })
