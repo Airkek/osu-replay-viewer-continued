@@ -15,6 +15,7 @@ namespace osu_replay_renderer_netcore.Audio
         private readonly object factory;
 
         public int SampleId => (int)SampleBassFactory.GetMethod("get_SampleId").Invoke(factory, null);
+        public override double Length => 0;
         public override bool IsLoaded => (bool)SampleBassFactory.GetMethod("get_IsLoaded").Invoke(factory, null);
 
         public SampleBassAdapter(ISample sample) : base("test")
