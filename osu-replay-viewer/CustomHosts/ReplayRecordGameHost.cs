@@ -60,7 +60,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
         private readonly GlRenderer rendererType;
         private RenderWrapper wrapper;
 
-        public ReplayRecordGameHost(string gameName, EncoderBase encoder, RecordClock recordClock, GlRenderer rendererType, bool patchesApplied) : base(gameName)
+        public ReplayRecordGameHost(string gameName, EncoderBase encoder, RecordClock recordClock, GlRenderer rendererType, bool patchesApplied, GameSettings settings) : base(gameName)
         {
             this.encoder = encoder;
             isFinishFramePatched = patchesApplied;
@@ -74,7 +74,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 RenderPatcher.OnDraw += OnDraw;
             }
 
-            PrepareAudioRendering();
+            PrepareAudioRendering(settings);
         }
 
         public void SetAudioTrack(AudioBuffer track)
@@ -126,7 +126,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             Console.WriteLine(FormattableString.Invariant($"Render finished in {timer.Elapsed:g}. FPS - Min: {minFps:F2}, Median: {medianFps:F2}, Max: {maxFps:F2} (Average: {averageFps:F2})"));
         }
 
-        private void PrepareAudioRendering()
+        private void PrepareAudioRendering(GameSettings settings)
         {
             if (!isAudioPatched)
             {
@@ -161,7 +161,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                         {
                             buff.SoundTouchAll(p => p.Pitch = sample.Frequency.Value * sample.AggregateFrequency.Value);
                         }
-                        buff.Process(x => x * sample.Volume.Value * sample.AggregateVolume.Value);
+                        buff.Process(x => x * sample.Volume.Value * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
                         return buff;
                     });
             };

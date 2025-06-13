@@ -20,28 +20,7 @@ to upgrade to make UI matches with actual game
 - Render replays to video file (FFmpeg required)
 
 ## Basic Usage
-```sh
-# List all downloaded replays in osu!lazer
-# Look for replay GUID (something like f1bb0aa3-5111-4534-b93d-e1e20074f7fe) and pass it to
-# --view local <GUID>
-osu-replay-viewer -osu --list
-
-# View replay from osu!lazer
-osu-replay-viewer -osu --view local f1bb0aa3-5111-4534-b93d-e1e20074f7fe
-
-# List all available skins in osu!lazer
-osu-replay-viewer -osu --list-skin
-
-# View replay with given skin from osu!lazer
-osu-replay-viewer -osu --skin select "osu!classic" --view local f1bb0aa3-5111-4534-b93d-e1e20074f7fe
-
-# Record replay (without using osu!lazer data)
-osu-replay-viewer --skin import path/to/skin.osk --import-beatmap path/to/beatmapset.osz --view file path/to/replay.osr --record 
-
-# Record replay using nvidia hardware encoder (without using osu!lazer data)
-osu-replay-viewer --skin import path/to/skin.osk --import-beatmap path/to/beatmapset.osz --view file path/to/replay.osr --record --ffmpeg-encoder h264_nvenc --ffmpeg-preset p7
-
-```
+- [ ] TODO
 
 ## Requirements
 - [.NET 8.0](https://dotnet.microsoft.com/download/dotnet/8.0)
@@ -72,7 +51,7 @@ Usage:
   dotnet run osu-replay-viewer [options...]
   osu-replay-viewer [options...]
 
-  --yes                   
+  --yes
     Always Yes
     Always answer yes to all prompts. Similar to 'command | yes'
 
@@ -111,75 +90,20 @@ Usage:
     Help Index
     View help with details
 
+  --config                 </path/to/config.json>
+    Alternatives: -c
+    osu-replay-viewer config path
+    Use config from file
+
   --record
     Alternatives: -R
     Record Mode
     Switch to record mode
 
-  --record-renderer        <Type (auto/veldrid/deferred/legacy)>
-    Alternatives: -RR
-    Record mode Renderer
-    Select osu!framework renderer for record mode
-
   --record-output          <Output = osu-replay.mp4>
     Alternatives: -O
     Record Output
     Set record output
-
-  --record-resolution      <Width = 1280> <Height = 720>
-    Alternatives: -RSL
-    Record Resolution
-    Set the output resolution
-
-  --record-fps             <FPS = 60>
-    Alternatives: -FPS
-    Record FPS
-    Set the output FPS
-
-  --ffmpeg-type            <Type (external/bindings)>
-    Alternatives: -FT
-    FFmpeg type
-    Which type of ffmpeg should we use
-
-  --ffmpeg-path            <Path>
-    Alternatives: -FLP
-    FFmpeg folder path
-    Path to directory with ffmpeg binary/libs
-
-  --ffmpeg-exec            <Path>
-    Alternatives: -FEXE
-    FFmpeg executable path
-    Path to ffmpeg executable binary
-
-  --ffmpeg-preset          <Preset = slow>
-    Alternatives: -FPR
-    FFmpeg H264 Encoding Preset
-    Set the FFmpeg H264 Encoding preset
-
-  --ffmpeg-frames-blending <Blending = 1>
-    Alternatives: -FBL
-    FFmpeg Frames Blending
-    Blend multiple frames to create smooth transition. Default is 1x
-
-  --ffmpeg-minterpolation
-    Alternatives: -FMI
-    FFmpeg Motion Interpolation
-    Use motion interpolation to create smooth transition
-
-  --ffmpeg-encoder         <Encoder (libx264/h264_nvenc/h264_qsv/h264_amf/h264_videotoolbox)>
-    Alternatives: -FENC
-    FFmpeg Video Encoder
-    Set video encoder for FFmpeg. 'ffmpeg -encoders' for the list
-
-  --ffmpeg-bitrate         <Bitrate = 100M>
-    Alternatives: -FQ
-    FFmpeg Global Quality
-    Set the max bitrate for output video
-
-  --ffmpeg-show-output
-    Alternatives: -FSO
-    Show ffmpeg output
-    Show ffmpeg output (applicable only to external ffmpeg)
 
   --experimental           <Flag>
     Alternatives: -experimental
@@ -223,8 +147,8 @@ To use hardware acceleration, you need:
 - Compatible hardware (Intel, AMD or NVIDIA GPUs)
 - Driver
 
-Simply add ``--ffmpeg-encoder h264_<qsv/amf/nvenc/videotoolbox>`` or ``--ffmpeg-encoder hevc<qsv/amf/nvenc/videotoolbox>`` to
-enable hardware encoding. (Eg: ``osu-replay-renderer --view local 1337 --record --ffmpeg-encoder h264_qsv``)
+Set ``video_encoder`` config option to ``h264_<qsv/amf/nvenc/videotoolbox>`` or ``hevc_<qsv/amf/nvenc/videotoolbox>`` to
+enable hardware encoding.
 
 Here is the table for hardware encoders:
 | Vendor | Encoder           | Codec | Note     |
@@ -244,10 +168,5 @@ Here is the table for hardware encoders:
 This is the list of stuffs that I want to changes. It can be planned features or just revamp the code.
 
 - Live Graphs (Live PP, accuracy or difficulty)
-- Custom HUD from DLLs (similar to osu! custom rulesets)
-- Customiztation
 - Split CLI system to seperate project (if you're willing to use it)
 - Change the project name
-- Allow user to choose different osu!lazer application directory
-
-> While Live PP Graph is currently possible, it would be nice if someone exposes them as bindables.

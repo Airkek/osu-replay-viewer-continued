@@ -3,7 +3,6 @@ using osu.Framework.Allocation;
 using osu.Framework.Configuration;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Input;
-using osu.Framework.Platform;
 using osu.Framework.Screens;
 using osu.Framework.Timing;
 using osu.Game;
@@ -17,7 +16,6 @@ using osu.Game.Scoring.Legacy;
 using osu.Game.Screens.Play;
 using osu.Game.Screens.Ranking;
 using osu.Game.Screens.Ranking.Statistics;
-using osu_replay_renderer_netcore.Audio;
 using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts;
 using System;
@@ -27,8 +25,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
-using osu_replay_renderer_netcore.CustomHosts.Record;
-using osu.Framework.Logging;
 using osu.Game.Configuration;
 using osu.Game.Rulesets.Mania.Configuration;
 using osu.Game.Rulesets.Osu.Configuration;
@@ -64,8 +60,12 @@ namespace osu_replay_renderer_netcore
         private DependencyContainer dependencies;
         private TestRulesetConfigCache configCache = new TestRulesetConfigCache();
 
-        public OsuGameRecorder()
-        {}
+        private GameSettings settings;
+
+        public OsuGameRecorder(GameSettings settings)
+        {
+            this.settings = settings;
+        }
 
         private string TempFolder = Path.GetTempPath();
         
@@ -342,6 +342,10 @@ namespace osu_replay_renderer_netcore
                 config.SetValue(FrameworkSetting.FrameSync, FrameSync.Unlimited);
             }
             
+            config.SetValue(FrameworkSetting.VolumeMusic, settings.VolumeMusic);
+            config.SetValue(FrameworkSetting.VolumeEffect, settings.VolumeEffects);
+            config.SetValue(FrameworkSetting.VolumeUniversal, settings.VolumeMaster);
+            
             LocalConfig.SetValue(OsuSetting.HitLighting, false);
                 
             Audio.Balance.Value = 0;
@@ -408,9 +412,11 @@ namespace osu_replay_renderer_netcore
                 }
 
                 SelectSkin(skin);
-                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapColours).Value = false;
-                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapSkins).Value = false;
-                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapHitsounds).Value = false;
+                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapColours).Value = settings.BeatmapColors;
+                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapSkins).Value = settings.BeatmapSkin;
+                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapHitsounds).Value = settings.BeatmapHitsounds;
+                LocalConfig.GetBindable<bool>(OsuSetting.ShowStoryboard).Value = settings.ShowStoryboard;
+                LocalConfig.GetBindable<double>(OsuSetting.DimLevel).Value = settings.BackgroundDim;
             }
             
             Console.WriteLine("Loading player");

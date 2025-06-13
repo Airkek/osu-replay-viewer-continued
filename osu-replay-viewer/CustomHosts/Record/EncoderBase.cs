@@ -11,11 +11,8 @@ public struct EncoderConfig
     public string Preset;
     public string Encoder;
     public string Bitrate;
-    public bool MotionInterpolation;
-    public int FramesBlending;
     public string FFmpegPath;
     public string FFmpegExec;
-    public bool ShowFFmpegOutput;
 }
 
 public abstract class EncoderBase

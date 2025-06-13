@@ -12,14 +12,9 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         {
             get
             {
-                var actualFramesBlending = Math.Max(Config.FramesBlending, 1);
-
-                var inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS * actualFramesBlending} -i pipe:";
+                var inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS} -i pipe:";
 
                 var inputEffect = string.Empty;
-                if (actualFramesBlending > 1) inputEffect = $"-vf tblend=all_mode=average -r {Config.FPS}";
-                else if (Config.MotionInterpolation) inputEffect = $"-vf minterpolate=fps={Config.FPS * 4}";
-
                 var encoderSpecific = string.Empty;
 
                 switch (Config.Encoder)
@@ -65,7 +60,6 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 StartInfo =
                 {
                     UseShellExecute = false,
-                    CreateNoWindow = !Config.ShowFFmpegOutput,
                     FileName = Config.FFmpegExec,
                     Arguments = FFmpegArguments,
                     RedirectStandardInput = true

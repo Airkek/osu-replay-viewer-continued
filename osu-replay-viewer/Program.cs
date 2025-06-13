@@ -28,26 +28,14 @@ namespace osu_replay_renderer_netcore
             OptionDescription modOverride;
             OptionDescription query;
             OptionDescription osuGameName;
+            OptionDescription orvConfigPath;
             
             OptionDescription generalHelp;
             OptionDescription generalList;
             OptionDescription generalView;
 
             OptionDescription recordMode;
-            OptionDescription recordRenderer;
             OptionDescription recordOutput;
-            OptionDescription recordResolution;
-            OptionDescription recordFPS;
-
-            OptionDescription ffmpegType;
-            OptionDescription ffmpegLibPath;
-            OptionDescription ffmpegExec;
-            OptionDescription ffmpegPreset;
-            OptionDescription ffmpegFramesBlending;
-            OptionDescription ffmpegMotionInterpolation;
-            OptionDescription ffmpegVideoEncoder;
-            OptionDescription ffmpegBitrate;
-            OptionDescription ffmpegShowOutput;
 
             OptionDescription experimental;
             OptionDescription overrideOverlayOptions;
@@ -119,6 +107,15 @@ namespace osu_replay_renderer_netcore
                         DoubleDashes = new[] { "help" },
                         SingleDash = new[] { "h" }
                     },
+                    orvConfigPath = new()
+                    {
+                        Name = "osu-replay-viewer config path",
+                        Description = "Use config from file",
+                        DoubleDashes = new[] { "config" },
+                        SingleDash = new[] { "c" },
+                        Parameters = new []{ "/path/to/config.json" },
+                        ProcessedParameters = new [] { "osu-replay-viewer-config.json" }
+                    },
 
                     // Record options
                     recordMode = new()
@@ -128,15 +125,6 @@ namespace osu_replay_renderer_netcore
                         DoubleDashes = new[] { "record" },
                         SingleDash = new[] { "R" }
                     },
-                    recordRenderer = new()
-                    {
-                        Name = "Record mode Renderer",
-                        Description = "Select osu!framework renderer for record mode",
-                        DoubleDashes = new[] { "record-renderer" },
-                        SingleDash = new[] { "RR" },
-                        Parameters = new []{ "Type (auto/veldrid/deferred/legacy)" },
-                        ProcessedParameters = new [] { "auto" }
-                    },
                     recordOutput = new()
                     {
                         Name = "Record Output",
@@ -145,102 +133,6 @@ namespace osu_replay_renderer_netcore
                         SingleDash = new[] { "O" },
                         Parameters = new[] { "Output = osu-replay.mp4" },
                         ProcessedParameters = new[] { "osu-replay.mp4" }
-                    },
-                    recordResolution = new()
-                    {
-                        Name = "Record Resolution",
-                        Description = "Set the output resolution",
-                        DoubleDashes = new[] { "record-resolution" },
-                        SingleDash = new[] { "RSL" },
-                        Parameters = new[] { "Width = 1280", "Height = 720" },
-                        ProcessedParameters = new[] { "1280", "720" }
-                    },
-                    recordFPS = new()
-                    {
-                        Name = "Record FPS",
-                        Description = "Set the output FPS",
-                        DoubleDashes = new[] { "record-fps" },
-                        SingleDash = new[] { "FPS" },
-                        Parameters = new[] { "FPS = 60" },
-                        ProcessedParameters = new[] { "60" }
-                    },
-
-                    // FFmpeg options
-                    ffmpegType = new()
-                    {
-                        Name = "FFmpeg type",
-                        Description = "Which type of ffmpeg should we use",
-                        DoubleDashes = new[] { "ffmpeg-type" },
-                        SingleDash = new[] { "FT" },
-                        Parameters = new[] { "Type (external/bindings)" },
-                        ProcessedParameters = new[] { "pipe" }
-                    },
-                    ffmpegLibPath = new()
-                    {
-                        Name = "FFmpeg folder path",
-                        Description = "Path to directory with ffmpeg binary/libs",
-                        DoubleDashes = new[] { "ffmpeg-path" },
-                        SingleDash = new[] { "FLP" },
-                        Parameters = new[] { "Path" },
-                    },
-                    ffmpegExec = new()
-                    {
-                        Name = "FFmpeg executable path",
-                        Description = "Path to ffmpeg executable binary",
-                        DoubleDashes = new[] { "ffmpeg-exec" },
-                        SingleDash = new[] { "FEXE" },
-                        Parameters = new[] { "Path" },
-                        ProcessedParameters = new[] { "ffmpeg" }
-                    },
-                    ffmpegPreset = new()
-                    {
-                        Name = "FFmpeg H264 Encoding Preset",
-                        Description = "Set the FFmpeg H264 Encoding preset",
-                        DoubleDashes = new[] { "ffmpeg-preset" },
-                        SingleDash = new[] { "FPR" },
-                        Parameters = new[] { "Preset = slow" },
-                        ProcessedParameters = new[] { "slow" }
-                    },
-                    ffmpegFramesBlending = new()
-                    {
-                        Name = "FFmpeg Frames Blending",
-                        Description = "Blend multiple frames to create smooth transition. Default is 1x",
-                        DoubleDashes = new[] { "ffmpeg-frames-blending" },
-                        SingleDash = new[] { "FBL" },
-                        Parameters = new[] { "Blending = 1" },
-                        ProcessedParameters = new[] { "1" }
-                    },
-                    ffmpegMotionInterpolation = new()
-                    {
-                        Name = "FFmpeg Motion Interpolation",
-                        Description = "Use motion interpolation to create smooth transition",
-                        DoubleDashes = new[] { "ffmpeg-minterpolation" },
-                        SingleDash = new[] { "FMI" }
-                    },
-                    ffmpegVideoEncoder = new()
-                    {
-                        Name = "FFmpeg Video Encoder",
-                        Description = "Set video encoder for FFmpeg. 'ffmpeg -encoders' for the list",
-                        DoubleDashes = new[] { "ffmpeg-encoder" },
-                        SingleDash = new[] { "FENC" },
-                        Parameters = new[] { "Encoder (libx264/h264_nvenc/h264_qsv/h264_amf/h264_videotoolbox)" },
-                        ProcessedParameters = new[] { "libx264" }
-                    },
-                    ffmpegBitrate = new()
-                    {
-                        Name = "FFmpeg Global Quality",
-                        Description = "Set the max bitrate for output video",
-                        DoubleDashes = new[] { "ffmpeg-bitrate" },
-                        SingleDash = new[] { "FQ" },
-                        Parameters = new[] { "Bitrate = 100M" },
-                        ProcessedParameters = new[] { "100M" }
-                    },
-                    ffmpegShowOutput = new()
-                    {
-                        Name = "Show ffmpeg output",
-                        Description = "Show ffmpeg output (applicable only to external ffmpeg)",
-                        DoubleDashes = new[] { "ffmpeg-show-output" },
-                        SingleDash = new[] { "FSO" }
                     },
 
                     // Misc
@@ -310,6 +202,8 @@ namespace osu_replay_renderer_netcore
                     cli.PrintHelp(generalHelp.Triggered, query.Triggered ? query[0] : null);
                     return;
                 }
+                
+                var orvConfig = Config.ReadFromFile(orvConfigPath[0]);
 
                 var gameName = GAME_NAME;
 
@@ -321,11 +215,8 @@ namespace osu_replay_renderer_netcore
                 if (recordMode.Triggered)
                 {
                     if (!CLIUtils.AskFileDelete(alwaysYes.Triggered, recordOutput[0])) return;
-
-                    var fps = ParseIntOrThrow(recordFPS[0]);
-                    var blending = ParseIntOrThrow(ffmpegFramesBlending[0]);
                     
-                    var recordClock = new RecordClock(fps * blending);
+                    var recordClock = new RecordClock(orvConfig.RecordOptions.FrameRate);
                     if (patched)
                     {
                         ClockPatcher.OnStopwatchClockSetAsSource += clock =>
@@ -334,59 +225,48 @@ namespace osu_replay_renderer_netcore
                         };
                     }
 
+                    var resolutionArr = orvConfig.RecordOptions.Resolution.ToLower().Split('x').Select(x => int.Parse(x.Trim())).ToArray();
                     var resolution = new Size
                     {
-                        Width = ParseIntOrThrow(recordResolution[0]),
-                        Height = ParseIntOrThrow(recordResolution[1])
+                        Width = resolutionArr[0],
+                        Height = resolutionArr[1]
                     };
-
-                    var rendererType = ParseRenderer(recordRenderer[0]);
 
                     var config = new EncoderConfig
                     {
-                        FPS = fps,
+                        FPS = orvConfig.RecordOptions.FrameRate,
                         Resolution = resolution,
                         OutputPath = recordOutput[0],
-                        Preset = ffmpegPreset[0],
-                        Encoder = ffmpegVideoEncoder[0],
-                        Bitrate = ffmpegBitrate[0],
+                        Preset = orvConfig.FFmpegOptions.VideoEncoderPreset,
+                        Encoder = orvConfig.FFmpegOptions.VideoEncoder,
+                        Bitrate = orvConfig.FFmpegOptions.VideoEncoderBitrate,
                         
                         // External only
-                        FFmpegExec = ffmpegExec[0],
-                        ShowFFmpegOutput = ffmpegShowOutput.Triggered,
-
-                        // Smoothing options (external only atm)
-                        FramesBlending = blending,
-                        MotionInterpolation = ffmpegMotionInterpolation.Triggered,
+                        FFmpegExec = orvConfig.FFmpegOptions.Executable,
                     };
                     
-                    FFmpegAudioTools.FFmpegExec = ffmpegExec[0];
-                    FFmpegAudioTools.ShowOutput = ffmpegShowOutput.Triggered;
+                    FFmpegAudioTools.FFmpegExec = orvConfig.FFmpegOptions.Executable;
 
-                    if (ffmpegLibPath.Triggered)
+                    if (!string.IsNullOrWhiteSpace(orvConfig.FFmpegOptions.LibrariesPath))
                     {
-                        config.FFmpegPath = ffmpegLibPath[0];
+                        config.FFmpegPath = orvConfig.FFmpegOptions.LibrariesPath;
                     }
 
-                    EncoderBase encoder = ffmpegType[0] switch
+                    EncoderBase encoder = orvConfig.FFmpegOptions.Mode switch
                     {
-                        "pipe" or "external" => new ExternalFFmpegEncoder(config),
-                        "bindings" => new FFmpegAutoGenEncoder(config),
-                        _ => throw new CLIException
-                        {
-                            Cause = "Command-line Arguments (Parsing)",
-                            DisplayMessage = $"Value {ffmpegType[0]} is invaild"
-                        }
+                        FFmpegMode.Pipe => new ExternalFFmpegEncoder(config),
+                        FFmpegMode.Binding => new FFmpegAutoGenEncoder(config),
+                        _ => throw new ArgumentOutOfRangeException("FFmpeg mode")
                     };
 
-                    host = new ReplayRecordGameHost(gameName, encoder, recordClock, rendererType, patched);
+                    host = new ReplayRecordGameHost(gameName, encoder, recordClock, orvConfig.RecordOptions.Renderer, patched, orvConfig.GameSettings);
                 }
                 else
                 {
                     host = Host.GetSuitableDesktopHost(gameName);
                 }
                 
-                game = new OsuGameRecorder();
+                game = new OsuGameRecorder(orvConfig.GameSettings);
                 game.ModsOverride = modsOverride;
                 game.ExperimentalFlags = experimentalFlags;
 
@@ -504,38 +384,6 @@ namespace osu_replay_renderer_netcore
 
             host.Run(game);
             host.Dispose();
-        }
-        
-        static GlRenderer ParseRenderer(string str)
-        {
-            switch (str.ToLower().Trim())
-            {
-                case "auto":
-                    return GlRenderer.Auto;
-                case "veldrid":
-                    return GlRenderer.Veldrid;
-                case "deferred":
-                    return GlRenderer.Deferred;
-                case "legacy":
-                case "gl":
-                    return GlRenderer.Legacy;
-                default:
-                    throw new CLIException
-                    {
-                        Cause = "Command-line Arguments (Parsing)",
-                        DisplayMessage = $"Invalid integer: {str}"
-                    };
-            }
-        }
-
-        static int ParseIntOrThrow(string str)
-        {
-            if (!int.TryParse(str, out int val)) throw new CLIException
-            {
-                Cause = "Command-line Arguments (Parsing)",
-                DisplayMessage = $"Invalid integer: {str}"
-            };
-            return val;
         }
 
         static bool ParseBoolOrThrow(string str)
