@@ -29,19 +29,15 @@ namespace osu_replay_renderer_netcore.Audio
         public AudioBuffer AsAudioBuffer()
         {
             var info = ManagedBass.Bass.SampleGetInfo(SampleId);
+            
+            if (info.Channels < 1) return null;
+            
             var format = new AudioFormat
             {
                 Channels = info.Channels,
                 SampleRate = info.Frequency,
-                PCMSize = info.OriginalResolution / 8
+                PCMSize = (int)Math.Ceiling(info.Length / (info.Channels * info.Frequency * (TargetedSample.Length / 1000.0)))
             };
-
-            if (format.Channels == 0) return null;
-
-            if (format.PCMSize == 0)
-            {
-                format.PCMSize = 2;
-            }
 
             var samples = info.Length / format.PCMSize / format.Channels;
             var bytes = new byte[info.Length];
@@ -52,8 +48,8 @@ namespace osu_replay_renderer_netcore.Audio
             {
                 buff.Data[i] = format.PCMSize switch
                 {
-                    1 => bytes[i] / 255f,
-                    2 => BitConverter.ToInt16(bytes, i * format.PCMSize) / 32768f,
+                    1 => bytes[i] / (float)byte.MaxValue,
+                    2 => BitConverter.ToInt16(bytes, i * format.PCMSize) / (float)short.MaxValue,
                     _ => 0f
                 };
             }
