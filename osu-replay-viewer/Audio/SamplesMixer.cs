@@ -20,30 +20,53 @@ namespace osu_replay_renderer_netcore.Audio
             Buffer = buffer;
         }
 
-        public void Mix(AudioBuffer sample, double startSec)
+        public void Mix(AudioBuffer sample, double startSec, double? endSec)
         {
-            if (sample == null) return;
-
-            int bufferStartSample = (int)Math.Floor(startSec * Format.SampleRate);
+            if (sample == null) 
+                return;
+            
+            var bufferStartSample = (int)Math.Floor(startSec * Format.SampleRate);
+            
+            int maxSampleCount;
+            if (endSec.HasValue)
+            {
+                var sampleEndSample = (int)Math.Floor(endSec.Value * sample.Format.SampleRate);
+                maxSampleCount = sampleEndSample - (int)Math.Floor(startSec * sample.Format.SampleRate);
+                if (maxSampleCount < 0)
+                    return;
+            }
+            else
+            {
+                maxSampleCount = sample.Samples;
+            }
+            
+            maxSampleCount = Math.Min(maxSampleCount, sample.Samples);
+            maxSampleCount = Math.Min(maxSampleCount, Buffer.Samples - bufferStartSample);
+            if (maxSampleCount <= 0)
+                return;
             if (Format.SampleRate == sample.Format.SampleRate)
             {
-                for (int i = 0; i < sample.Samples; i++)
+                for (var i = 0; i < maxSampleCount; i++)
                 {
-                    if (i >= Buffer.Samples) return;
-                    for (int ch = 0; ch < Format.Channels; ch++)
+                    for (var ch = 0; ch < Format.Channels; ch++)
+                    {
                         Buffer[ch, bufferStartSample + i] += sample[ch, i];
+                    }
                 }
             }
             else
             {
-                var duration = sample.Duration;
-                for (int i = 0; i < Format.SampleRate * duration; i++)
+                var rateRatio = sample.Format.SampleRate / (double)Format.SampleRate;
+                for (var i = 0; i < maxSampleCount; i++)
                 {
-                    if (i >= Buffer.Samples) return;
-                    for (int ch = 0; ch < Format.Channels; ch++)
-                        Buffer[ch, bufferStartSample + i] += sample.Resample(ch, Format.SampleRate, i);
+                    for (var ch = 0; ch < Format.Channels; ch++)
+                    {
+                        Buffer[ch, bufferStartSample + i] += 
+                            sample.Resample(ch, Format.SampleRate, i);
+                    }
                 }
             }
         }
+
     }
 }

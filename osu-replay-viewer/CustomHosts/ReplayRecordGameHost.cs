@@ -16,6 +16,7 @@ using System.Reflection;
 using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu_replay_renderer_netcore.Record;
+using osu.Framework.Audio.Sample;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Rendering;
 
@@ -147,6 +148,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 };
             };
 
+            var sampleStoppers = new Dictionary<ISample, AudioJournal.SampleStopper>();
+
             AudioPatcher.OnSamplePlay += sample =>
             {
                 if (sample is null || audioJournal is null)
@@ -154,7 +157,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                     return;
                 }
 
-                audioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
+                var stopper = audioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
                     {
                         buff = buff.CreateCopy();
                         if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
@@ -164,6 +167,20 @@ namespace osu_replay_renderer_netcore.CustomHosts
                         buff.Process(x => x * sample.Volume.Value * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
                         return buff;
                     });
+
+                if (stopper is not null)
+                {
+                    sampleStoppers[sample] = stopper;
+                }
+            };
+
+            AudioPatcher.OnSampleStop += sample =>
+            {
+                if (sampleStoppers.TryGetValue(sample, out var stopper))
+                {
+                    stopper(recordClock.CurrentTime / 1000.0);
+                    sampleStoppers.Remove(sample);
+                }
             };
         }
 

@@ -17,15 +17,17 @@ namespace osu_replay_renderer_netcore.Patching
         public override string PatcherId() => "osureplayrenderer.Audio";
         
         public static event Action<ISample> OnSamplePlay;
+        public static event Action<ISample> OnSampleStop;
         public static event Action<ITrack> OnTrackPlay;
 
         private static void TriggerOnSamplePlay(ISample sample) => OnSamplePlay?.Invoke(sample);
+        private static void TriggerOnSampleStop(ISample sample) => OnSampleStop?.Invoke(sample);
         private static void TriggerOnTrackPlay(ITrack track) => OnTrackPlay?.Invoke(track);
 
         
         [HarmonyPatch(typeof(PoolableSkinnableSample))]
         [HarmonyPatch("Play")]
-        class PoolableSkinnableSamplePatch
+        class PoolableSkinnableSamplePlayPatch
         {
             static bool Prefix(PoolableSkinnableSample __instance)
             {
@@ -36,11 +38,22 @@ namespace osu_replay_renderer_netcore.Patching
         
         [HarmonyPatch(typeof(Sample))]
         [HarmonyPatch("Play")]
-        class SamplePatch
+        class SamplePlayPatch
         {
             static bool Prefix(Sample __instance)
             {
                 TriggerOnSamplePlay(__instance);
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(PoolableSkinnableSample))]
+        [HarmonyPatch("Stop")]
+        class PoolableSkinnableSampleStopPatch
+        {
+            static bool Prefix(PoolableSkinnableSample __instance)
+            {
+                TriggerOnSampleStop(__instance.Sample);
                 return false;
             }
         }

@@ -3,6 +3,7 @@ using osu.Framework.Audio.Track;
 using osu.Framework.Graphics.Audio;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 namespace osu_replay_renderer_netcore.Audio
@@ -18,15 +19,17 @@ namespace osu_replay_renderer_netcore.Audio
         public readonly List<JournalElement> JournalElements = new();
         public readonly Dictionary<int, AudioBuffer> CachedSampleBuffers = new();
 
+        public delegate void SampleStopper(double endTime);
+
         public double LongestDuration
         {
             get
             {
-                return JournalElements.Select(x => x.Time + x.Buffer.Duration).Max();
+                return JournalElements.Select(x => x.EndTime ?? x.Time + x.Buffer.Duration).Max();
             }
         }
 
-        public void SampleAt(double t, ISample sample, Func<AudioBuffer, AudioBuffer> process = null)
+        public SampleStopper SampleAt(double t, ISample sample, Func<AudioBuffer, AudioBuffer> process = null)
         {
             int recursionAllowed = 50;
             while (sample is DrawableSample sample2 && recursionAllowed > 0)
@@ -35,35 +38,50 @@ namespace osu_replay_renderer_netcore.Audio
                 recursionAllowed--;
             }
 
-            if (sample is SampleVirtual) return;
+            if (sample is SampleVirtual) return null;
             if (recursionAllowed <= 0) throw new Exception($"Recursion exceed while getting SampleBass instance");
             if (!sample.IsSampleBass()) throw new Exception($"The given sample doesn't have SampleBass instance");
 
             var bass = sample.AsSampleBass();
-            if (bass.SampleId == 0) return;
+            if (bass.SampleId == 0) return null;
 
             AudioBuffer buff;
             if (!CachedSampleBuffers.TryGetValue(bass.SampleId, out var buffer))
             {
                 buff = bass.AsAudioBuffer();
-                if (buff == null) return;
+                if (buff == null) return null;
 
                 CachedSampleBuffers.Add(bass.SampleId, buff);
             }
             else buff = buffer;
-            BufferAt(t, buff, process);
+            return BufferAt(t, buff, process);
         }
 
-        public void BufferAt(double t, AudioBuffer buff, Func<AudioBuffer, AudioBuffer> process = null)
+        public SampleStopper BufferAt(double t, AudioBuffer buff, Func<AudioBuffer, AudioBuffer> process = null)
         {
             if (process != null) buff = process(buff);
-            JournalElements.Add(new JournalElement { Time = t, Buffer = buff });
+            var element = new JournalElement { Time = t, Buffer = buff };
+            JournalElements.Add(element);
+
+            SampleStopper stopper = (endTime) =>
+            {
+                if (element.EndTime.HasValue)
+                {
+                    Debug.Assert(false);
+                    return; 
+                }
+                element.EndTime = endTime;
+            };
+            return stopper;
         }
 
         public void MixSamples(AudioBuffer buffer)
         {
             SamplesMixer mixer = new(buffer);
-            foreach (var element in JournalElements) mixer.Mix(element.Buffer, element.Time);
+            foreach (var element in JournalElements)
+            {
+                mixer.Mix(element.Buffer, element.Time, element.EndTime);
+            }
         }
 
         public void Reset()
@@ -71,10 +89,11 @@ namespace osu_replay_renderer_netcore.Audio
             JournalElements.Clear();
         }
 
-        public struct JournalElement
+        public class JournalElement
         {
             public AudioBuffer Buffer;
             public double Time;
+            public double? EndTime = null;
         }
     }
 }
