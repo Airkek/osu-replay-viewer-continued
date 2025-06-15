@@ -259,10 +259,10 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
             var buff = AudioBuffer.FromSeconds(new AudioFormat
             {
-                Channels = 2,
-                SampleRate = 48000,
-                PCMSize = 2
-            }, audioJournal.LongestDuration + 3.0);
+                Channels = audioTrack?.Format.Channels ?? 2,
+                SampleRate = audioTrack?.Format.SampleRate ?? 48000,
+                PCMSize = audioTrack?.Format.PCMSize ?? 2
+            }, recordClock.CurrentTime / 1000f);
             audioJournal.MixSamples(buff);
             buff.Process(x => Math.Tanh(x));
             return buff;
