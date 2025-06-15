@@ -8,6 +8,7 @@ using osu_replay_renderer_netcore.Audio;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu_replay_renderer_netcore.Patching;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -148,7 +149,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 };
             };
 
-            var sampleStoppers = new Dictionary<ISample, AudioJournal.SampleStopper>();
+            var sampleStoppers = new ConcurrentDictionary<ISample, AudioJournal.SampleStopper>();
 
             AudioPatcher.OnSamplePlay += sample =>
             {
@@ -176,10 +177,9 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             AudioPatcher.OnSampleStop += sample =>
             {
-                if (sampleStoppers.TryGetValue(sample, out var stopper))
+                if (sampleStoppers.TryRemove(sample, out var stopper))
                 {
                     stopper(recordClock.CurrentTime / 1000.0);
-                    sampleStoppers.Remove(sample);
                 }
             };
         }
