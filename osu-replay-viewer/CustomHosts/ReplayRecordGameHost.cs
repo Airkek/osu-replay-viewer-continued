@@ -20,6 +20,7 @@ using osu_replay_renderer_netcore.Record;
 using osu.Framework.Audio.Sample;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Rendering;
+using osu.Game.Skinning;
 
 namespace osu_replay_renderer_netcore.CustomHosts
 {
@@ -149,35 +150,46 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 };
             };
 
-            var sampleStoppers = new ConcurrentDictionary<ISample, AudioJournal.SampleStopper>();
-
-            AudioPatcher.OnSamplePlay += sample =>
+            var registerSample = (ISample sample) =>
             {
                 if (sample is null || audioJournal is null)
                 {
-                    return;
+                    return null;
                 }
 
                 var stopper = audioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
+                {
+                    buff = buff.CreateCopy();
+                    if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
                     {
-                        buff = buff.CreateCopy();
-                        if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
-                        {
-                            buff.SoundTouchAll(p => p.Pitch = sample.Frequency.Value * sample.AggregateFrequency.Value);
-                        }
-                        buff.Process(x => x * sample.Volume.Value * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
-                        return buff;
-                    });
+                        buff.SoundTouchAll(p => p.Pitch = sample.AggregateFrequency.Value);
+                    }
 
+                    buff.Process(x => x * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
+                    return buff;
+                });
+
+                return stopper;
+            };
+            
+            AudioPatcher.OnSamplePlay += sample =>
+            {
+                registerSample(sample);
+            };
+            
+            var skinSampleStoppers = new Dictionary<PoolableSkinnableSample, AudioJournal.SampleStopper>();
+            AudioPatcher.OnSkinSamplePlay += skinableSample =>
+            {
+                var stopper = registerSample(skinableSample.Sample);
                 if (stopper is not null)
                 {
-                    sampleStoppers[sample] = stopper;
+                    skinSampleStoppers[skinableSample] = stopper;
                 }
             };
 
-            AudioPatcher.OnSampleStop += sample =>
+            AudioPatcher.OnSkinSampleStop += skinableSample =>
             {
-                if (sampleStoppers.TryRemove(sample, out var stopper))
+                if (skinSampleStoppers.Remove(skinableSample, out var stopper))
                 {
                     stopper(recordClock.CurrentTime / 1000.0);
                 }
