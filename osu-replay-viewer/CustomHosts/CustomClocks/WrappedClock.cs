@@ -52,6 +52,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.CustomClocks
 
         public bool Seek(double position)
         {
+            TimeOffset += position - CurrentTime;
             return original.Seek(position);
         }
 
