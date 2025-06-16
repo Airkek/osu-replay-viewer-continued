@@ -15,6 +15,7 @@ public enum FFmpegMode
 
 public class GameSettings
 {
+    [JsonProperty("skip_intro")] public bool SkipIntro = false;
     [JsonProperty("background_dim")] public double BackgroundDim = 0.75;
     [JsonProperty("show_storyboard_or_video")] public bool ShowStoryboard = true;
     [JsonProperty("use_beatmap_hitsounds")] public bool BeatmapHitsounds = false;

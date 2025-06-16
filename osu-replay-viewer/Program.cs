@@ -367,6 +367,8 @@ namespace osu_replay_renderer_netcore
                 else if (recordMode.Triggered) game.HideOverlaysInPlayer = true;
                 else game.HideOverlaysInPlayer = false;
 
+                game.SkipIntro = orvConfig.GameSettings.SkipIntro;
+
             } catch (CLIException cliException)
             {
                 Console.WriteLine("Error while processing CLI arguments:");

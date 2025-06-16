@@ -56,6 +56,7 @@ namespace osu_replay_renderer_netcore
         public string BeatmapPath { get; set; } = string.Empty;
         
         public bool HideOverlaysInPlayer = false;
+        public bool SkipIntro = false;
 
         private DependencyContainer dependencies;
         private TestRulesetConfigCache configCache = new TestRulesetConfigCache();
@@ -393,7 +394,7 @@ namespace osu_replay_renderer_netcore
                 recordHost.SetAudioTrack(track);
             }
 
-            Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer);
+            Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer, SkipIntro);
 
             Player.OnFailed += () =>
             {

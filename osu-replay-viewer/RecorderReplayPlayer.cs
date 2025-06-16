@@ -29,7 +29,7 @@ namespace osu_replay_renderer_netcore
         public bool ManipulateClock { get; set; } = false;
         public bool HideOverlays { get; private set; } = false;
 
-        public RecorderReplayPlayer(Score score, bool hideOverlays) : base(score, new PlayerConfiguration
+        public RecorderReplayPlayer(Score score, bool hideOverlays, bool skipIntro) : base(score, new PlayerConfiguration
         {
             AllowRestart = false,
             AllowPause = false,
@@ -37,7 +37,7 @@ namespace osu_replay_renderer_netcore
             AllowUserInteraction = !hideOverlays,
             ShowLeaderboard = false,
             AllowSkipping = !hideOverlays,
-            AutomaticallySkipIntro = false
+            AutomaticallySkipIntro = skipIntro
         })
         {
             GivenScore = score;
@@ -138,6 +138,14 @@ namespace osu_replay_renderer_netcore
                 foreach (Mod mod in GivenScore.ScoreInfo.Mods)
                 {
                     if (mod is IApplicableToRate rateMod) clock.RateMod = rateMod;
+                }
+
+                if (Configuration.AutomaticallySkipIntro)
+                {
+                    SchedulerAfterChildren.Add(() =>
+                    {
+                        (GameplayClockContainer as MasterGameplayClockContainer)?.Skip();
+                    });
                 }
             } else base.StartGameplay();
         }
