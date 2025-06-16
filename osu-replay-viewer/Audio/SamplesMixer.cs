@@ -20,37 +20,46 @@ namespace osu_replay_renderer_netcore.Audio
             Buffer = buffer;
         }
 
-        public void Mix(AudioBuffer sample, double startSec, double? endSec)
+        public void Mix(AudioBuffer sample, double startOffset, double startSec, double? endSec)
         {
             if (sample == null) 
                 return;
             
             var bufferStartSample = (int)Math.Floor(startSec * Format.SampleRate);
             
+            var sourceStartSample = (int)Math.Floor(startOffset * sample.Format.SampleRate);
+            
+            if (sourceStartSample < 0) 
+                sourceStartSample = 0;
+            if (sourceStartSample >= sample.Samples)
+                return;
+            
             int maxSampleCount;
             if (endSec.HasValue)
             {
-                var sampleEndSample = (int)Math.Floor(endSec.Value * sample.Format.SampleRate);
-                maxSampleCount = sampleEndSample - (int)Math.Floor(startSec * sample.Format.SampleRate);
-                if (maxSampleCount < 0)
+                var targetEndSample = (int)Math.Floor(endSec.Value * Format.SampleRate);
+                maxSampleCount = targetEndSample - bufferStartSample;
+                if (maxSampleCount <= 0)
                     return;
             }
             else
             {
-                maxSampleCount = sample.Samples;
+                maxSampleCount = sample.Samples - sourceStartSample; // Доступные сэмплы в исходном буфере
             }
             
-            maxSampleCount = Math.Min(maxSampleCount, sample.Samples);
+            maxSampleCount = Math.Min(maxSampleCount, sample.Samples - sourceStartSample);
             maxSampleCount = Math.Min(maxSampleCount, Buffer.Samples - bufferStartSample);
+            
             if (maxSampleCount <= 0)
                 return;
+            
             if (Format.SampleRate == sample.Format.SampleRate)
             {
                 for (var i = 0; i < maxSampleCount; i++)
                 {
                     for (var ch = 0; ch < Format.Channels; ch++)
                     {
-                        Buffer[ch, bufferStartSample + i] += sample[ch, i];
+                        Buffer[ch, bufferStartSample + i] += sample[ch, sourceStartSample + i];
                     }
                 }
             }
@@ -59,14 +68,14 @@ namespace osu_replay_renderer_netcore.Audio
                 var rateRatio = sample.Format.SampleRate / (double)Format.SampleRate;
                 for (var i = 0; i < maxSampleCount; i++)
                 {
+                    var sourceIndex = (int)(sourceStartSample + i * rateRatio);
                     for (var ch = 0; ch < Format.Channels; ch++)
                     {
                         Buffer[ch, bufferStartSample + i] += 
-                            sample.Resample(ch, Format.SampleRate, i);
+                            sample.Resample(ch, Format.SampleRate, sourceIndex);
                     }
                 }
             }
         }
-
     }
 }

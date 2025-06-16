@@ -84,6 +84,10 @@ namespace osu_replay_renderer_netcore
             }
 
             var tmpFile = Path.Combine(TempFolder, Path.GetFileName(skinPath));
+            if (File.Exists(tmpFile))
+            {
+                File.Delete(tmpFile);
+            }
 
             try
             {
@@ -123,12 +127,16 @@ namespace osu_replay_renderer_netcore
             }
 
             var tmpFile = Path.Combine(TempFolder, Path.GetFileName(beatmapSetPath));
+            if (File.Exists(tmpFile))
+            {
+                File.Delete(tmpFile);
+            }
 
             try
             {
                 File.Copy(beatmapSetPath, tmpFile);
             }
-            catch
+            catch (Exception e)
             {
                 Console.Error.WriteLine("Cannot copy beatmapset file to temp folder");
                 Exit();

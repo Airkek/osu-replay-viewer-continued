@@ -54,13 +54,13 @@ namespace osu_replay_renderer_netcore.Audio
                 CachedSampleBuffers.Add(bass.SampleId, buff);
             }
             else buff = buffer;
-            return BufferAt(t, buff, process);
+            return BufferAt(t, 0, buff, process);
         }
 
-        public SampleStopper BufferAt(double t, AudioBuffer buff, Func<AudioBuffer, AudioBuffer> process = null)
+        public SampleStopper BufferAt(double t, double startOffset, AudioBuffer buff, Func<AudioBuffer, AudioBuffer> process = null)
         {
             if (process != null) buff = process(buff);
-            var element = new JournalElement { Time = t, Buffer = buff };
+            var element = new JournalElement { Time = t, StartOffset = startOffset, Buffer = buff };
             JournalElements.Add(element);
 
             SampleStopper stopper = (endTime) =>
@@ -80,7 +80,7 @@ namespace osu_replay_renderer_netcore.Audio
             SamplesMixer mixer = new(buffer);
             foreach (var element in JournalElements)
             {
-                mixer.Mix(element.Buffer, element.Time, element.EndTime);
+                mixer.Mix(element.Buffer, element.StartOffset, element.Time, element.EndTime);
             }
         }
 
@@ -94,6 +94,7 @@ namespace osu_replay_renderer_netcore.Audio
             public AudioBuffer Buffer;
             public double Time;
             public double? EndTime = null;
+            public double StartOffset = 0;
         }
     }
 }

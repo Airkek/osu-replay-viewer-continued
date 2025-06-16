@@ -58,7 +58,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
         private AudioBuffer audioTrack = null;
         private AudioJournal.SampleStopper audioStopper = null;
         private bool isAudioPlayed = false;
-        private double audioPlayedTime = 0;
         public bool NeedAudio => isAudioPatched && audioTrack is null;
         
         private readonly GlRenderer rendererType;
@@ -140,12 +139,29 @@ namespace osu_replay_renderer_netcore.CustomHosts
                     return;
                 }
                 isAudioPlayed = true;
-                audioPlayedTime = recordClock.CurrentTime;
+
+                var startOffset = (track.CurrentTime / 1000f) / track.Rate;
                 Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
                 if (audioTrack is not null && audioJournal is not null)
                 {
-                    audioStopper = audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, audioTrack);
+                    audioStopper = audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, startOffset, audioTrack);
                 };
+            };
+
+            AudioPatcher.OnTrackSeek += track =>
+            {
+                if (!isAudioPlayed)
+                {
+                    return;
+                }
+
+                var startOffset = (track.CurrentTime / 1000f) / track.Rate;
+                Console.WriteLine($"Audio Rendering: Track seek to {startOffset} at frame #{recordClock.CurrentFrame}");
+                audioStopper?.Invoke(recordClock.CurrentTime / 1000f);
+                if (audioTrack is not null && audioJournal is not null)
+                {
+                    audioStopper = audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, startOffset, audioTrack);
+                }
             };
 
             var registerSample = (ISample sample) =>
