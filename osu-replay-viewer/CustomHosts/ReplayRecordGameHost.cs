@@ -56,6 +56,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         private readonly AudioJournal audioJournal = new();
         private AudioBuffer audioTrack = null;
+        private AudioJournal.SampleStopper audioStopper = null;
         private bool isAudioPlayed = false;
         private double audioPlayedTime = 0;
         public bool NeedAudio => isAudioPatched && audioTrack is null;
@@ -92,11 +93,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 return;
             }
 
-            var time = recordClock.CurrentTime;
             Console.WriteLine($"Cropping audio on frame #{recordClock.CurrentFrame}");
-
-            var newDuration = time - audioPlayedTime;
-            audioTrack.SetDuration(newDuration / 1000);
+            audioStopper?.Invoke(recordClock.CurrentTime / 1000);
         }
 
         public void StartRecording()
@@ -146,7 +144,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
                 if (audioTrack is not null && audioJournal is not null)
                 {
-                    audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, audioTrack);
+                    audioStopper = audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, audioTrack);
                 };
             };
 

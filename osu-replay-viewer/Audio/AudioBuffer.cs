@@ -55,11 +55,6 @@ namespace osu_replay_renderer_netcore.Audio
             }
             set => Data[Format.Channels * index + channel] = value;
         }
-        
-        public void SetDuration(double newDuration)
-        {
-            Samples = (int)(Format.SampleRate * newDuration);
-        }
 
         public float InterpolateAt(double t, int channel)
         {
