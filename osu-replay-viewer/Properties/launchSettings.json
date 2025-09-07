@@ -2,7 +2,7 @@
   "profiles": {
     "osu-replay-renderer-netcore": {
       "commandName": "Project",
-      "commandLineArgs": "--yes -R --view file D:\\replay.osr -osz D:\\beatmap.osz -skin import D:\\custom_29594.osk --config D:\\orv_config.json -O C:\\Users\\anton\\Desktop\\osu-replay.mp4"
+      "commandLineArgs": "--yes -R --view file /Users/a.babichev/replay.osr -osz /Users/a.babichev/beatmap.osz --config /Users/a.babichev/orv_config.json -O /Users/a.babichev/osu-replay.mp4"
     }
   }
 }

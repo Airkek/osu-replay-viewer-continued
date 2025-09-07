@@ -33,7 +33,6 @@ namespace osu_replay_renderer_netcore
         {
             AllowRestart = false,
             AllowPause = false,
-            AllowFailAnimation = true,
             AllowUserInteraction = !hideOverlays,
             ShowLeaderboard = false,
             AllowSkipping = !hideOverlays,
@@ -46,8 +45,9 @@ namespace osu_replay_renderer_netcore
 
         public Action OnFailed;
 
-        protected override void OnFail()
+        protected override void PerformFail()
         {
+            base.PerformFail();
             OnFailed?.Invoke();
             this.Push(CreateResults(GivenScore.ScoreInfo));
         }
