@@ -27,11 +27,9 @@ to upgrade to make UI matches with actual game
 - OpenGL ES 3.0 compatible device
 - FFmpeg installed
 
-This replay viewer is not guranteed to works on platforms other than Windows and Linux. Recording on non-x86 processors (arm/risc-v) is broken because Harmony does not support these architectures.
-
 ## Installing FFmpeg
 1. Grab FFmpeg binaries [here](https://www.ffmpeg.org/download.html)
-  > Linux users can also install FFmpeg from package manager included in their distribution
+  > Linux and MacOS users can also install FFmpeg from package manager included in their distribution
 
   > Windows users can download FFmpeg [here](https://www.gyan.dev/ffmpeg/builds/) or
     [here](https://github.com/BtbN/FFmpeg-Builds/releases)
