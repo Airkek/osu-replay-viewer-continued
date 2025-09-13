@@ -9,7 +9,7 @@ jobs:
   build:
     strategy:
       matrix:
-        runtime: [win-x64, linux-x64]
+        runtime: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
         config: [Debug, Release]
     runs-on: ubuntu-latest
     steps:
@@ -47,7 +47,7 @@ jobs:
           mkdir -p release-assets
           for dir in artifacts/*/; do
             dir_name=$(basename "$dir")
-            if [[ "$dir_name" == *win-x* ]]; then
+            if [[ "$dir_name" == *win-* || "$dir_name" == *osx-* ]]; then
               (cd "$dir" && zip -r "../../release-assets/${dir_name}.zip" .)
             else
               tar -czf "release-assets/${dir_name}.tar.gz" -C "$dir" .
