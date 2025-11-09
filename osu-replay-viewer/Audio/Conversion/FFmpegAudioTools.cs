@@ -10,12 +10,13 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
     public static class FFmpegAudioTools
     {
         public static string FFmpegExec = "ffmpeg";
-        
+
         public static void WriteAudioToVideo(string video, AudioBuffer buff)
         {
             var tempFile = video + ".audio.mp4";
 
-            var args = $"-y -i \"{video}\" -i - -c:v copy -c:a aac -b:a 256k -ar {buff.Format.SampleRate} -map 0:v -map 1:a \"{tempFile}\"";
+            var args =
+                $"-y -i \"{video}\" -i - -c:v copy -c:a aac -b:a 256k -ar {buff.Format.SampleRate} -map 0:v -map 1:a \"{tempFile}\"";
             Console.WriteLine($"Starting FFmpeg with arguments: {args}");
 
             var ffmpeg = new Process
@@ -54,34 +55,106 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             }
         }
 
-        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0, double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 48000)
+        public static void WriteAudioToMp3(string outputPath, AudioBuffer buff)
         {
-            var filters = new List<string>();
+            var tempFile = outputPath + ".tmp.mp3";
 
-            tempoFactor *= rateFactor;
-            pitchFactor *= rateFactor;
+            var args = $"-y -f wav -i - -c:a libmp3lame -b:a 256k -ar {buff.Format.SampleRate} \"{tempFile}\"";
+            Console.WriteLine($"Starting FFmpeg with arguments: {args}");
 
-            if (Math.Abs(tempoFactor - 1.0f) > double.Epsilon)
+            var ffmpeg = new Process
             {
-                filters.Add($"rubberband=tempo={tempoFactor.ToString(CultureInfo.InvariantCulture)}");
-            }
+                StartInfo =
+                {
+                    UseShellExecute = false,
+                    FileName = FFmpegExec,
+                    Arguments = args,
+                    RedirectStandardInput = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            };
 
-            if (Math.Abs(pitchFactor - 1.0f) > double.Epsilon)
+            try
             {
-                filters.Add($"rubberband=pitch={pitchFactor.ToString(CultureInfo.InvariantCulture)}");
+                ffmpeg.Start();
+                
+                buff.WriteWave(ffmpeg.StandardInput.BaseStream);
+                ffmpeg.StandardInput.Close();
+
+                ffmpeg.WaitForExit();
+
+                if (ffmpeg.ExitCode == 0)
+                {
+                    if (File.Exists(outputPath))
+                    {
+                        File.Delete(outputPath);
+                    }
+
+                    File.Move(tempFile, outputPath);
+                }
+                else
+                {
+                    Console.Error.WriteLine($"FFmpeg exited with code {ffmpeg.ExitCode}. Audio not written.");
+                    if (File.Exists(tempFile))
+                    {
+                        File.Delete(tempFile);
+                    }
+                }
             }
+            finally
+            {
+                if (File.Exists(tempFile))
+                {
+                    try
+                    {
+                        File.Delete(tempFile);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+
+        public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0,
+            double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 48000)
+        {
+            var filterParts = new List<string>();
+
+            var rubberbandFilters = new List<string>();
             
+            var effectiveTempoFactor = tempoFactor * rateFactor;
+            var effectivePitchFactor = pitchFactor * rateFactor;
+
+            if (Math.Abs(effectiveTempoFactor - 1.0) > double.Epsilon)
+            {
+                rubberbandFilters.Add($"tempo={effectiveTempoFactor.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            if (Math.Abs(effectivePitchFactor - 1.0) > double.Epsilon)
+            {
+                rubberbandFilters.Add($"pitch={effectivePitchFactor.ToString(CultureInfo.InvariantCulture)}");
+            }
+
+            if (rubberbandFilters.Count != 0)
+            {
+                filterParts.Add($"rubberband={string.Join(":", rubberbandFilters)}");
+            }
+
             if (Math.Abs(volume - 1.0) > double.Epsilon)
             {
-                filters.Add($"volume={volume.ToString(CultureInfo.InvariantCulture)}");
+                filterParts.Add($"volume={volume.ToString(CultureInfo.InvariantCulture)}");
             }
 
             var args = new StringBuilder();
             args.Append($"-i \"{path}\" ");
 
-            if (filters.Count > 0)
+            if (filterParts.Count > 0)
             {
-                args.Append($"-af \"{string.Join(",", filters)}\" ");
+                args.Append($"-af \"{string.Join(",", filterParts)}\" ");
             }
 
             args.Append($"-f s16le -acodec pcm_s16le -ac {outChannels} -ar {outRate} -");
@@ -90,7 +163,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
 
             using var ffmpeg = new Process
             {
-                StartInfo = 
+                StartInfo =
                 {
                     FileName = FFmpegExec,
                     Arguments = args.ToString(),
@@ -100,11 +173,11 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             };
 
             ffmpeg.Start();
-            
+
             var outputStream = new MemoryStream();
             ffmpeg.StandardOutput.BaseStream.CopyTo(outputStream);
             outputStream.Position = 0;
-            
+
             ffmpeg.WaitForExit();
 
             int sampleCount = (int)outputStream.Length / 2;
