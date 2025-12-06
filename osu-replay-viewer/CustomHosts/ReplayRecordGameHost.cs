@@ -104,6 +104,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         public void FinishRecording()
         {
+            wrapper?.Finish(encoder);
             encoder.Finish();
             timer.Stop();
 

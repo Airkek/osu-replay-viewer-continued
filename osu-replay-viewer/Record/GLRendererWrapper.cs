@@ -28,6 +28,11 @@ public class GLRendererWrapper : RenderWrapper
     private int vao, vbo;
     private bool resourcesInitialized = false;
 
+    private int[] pboIds = new int[2];
+    private int pboIndex = 0;
+    private bool pboInitialized = false;
+    private int pboSize = 0;
+
     private void InitializeResources()
     {
         if (resourcesInitialized) return;
@@ -199,22 +204,20 @@ public class GLRendererWrapper : RenderWrapper
 
         // 3. ReadPixels
         var bufferSize = DesiredSize.Width * (DesiredSize.Height * 3 / 2);
-        uint pbo;
-        GL.GenBuffers(1, out pbo);
+        InitializePBOs(bufferSize);
 
-        try
+        int index = pboIndex % 2;
+        int nextIndex = (pboIndex + 1) % 2;
+
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
+        GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
+        GL.ReadPixels(0, 0, DesiredSize.Width, DesiredSize.Height * 3 / 2, osuTK.Graphics.ES30.PixelFormat.Red, PixelType.UnsignedByte, IntPtr.Zero);
+        GL.PixelStore(PixelStoreParameter.PackAlignment, 4); // Restore default
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+
+        if (pboIndex > 0)
         {
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pbo);
-            GL.BufferData(BufferTarget.PixelPackBuffer, bufferSize, IntPtr.Zero, BufferUsageHint.StreamRead);
-
-            GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
-            GL.ReadPixels(0, 0, DesiredSize.Width, DesiredSize.Height * 3 / 2, osuTK.Graphics.ES30.PixelFormat.Red, PixelType.UnsignedByte, IntPtr.Zero);
-            GL.PixelStore(PixelStoreParameter.PackAlignment, 4); // Restore default
-            
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-            GL.Finish();
-
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pbo);
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
             var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, bufferSize, BufferAccessMask.MapReadBit);
 
             if (dataPtr != IntPtr.Zero)
@@ -229,59 +232,46 @@ public class GLRendererWrapper : RenderWrapper
                     GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
                 }
             }
-        }
-        finally
-        {
             GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-            GL.DeleteBuffers(1, ref pbo);
-            
-            // Restore state
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, oldFbo);
-            GL.ActiveTexture((TextureUnit)oldActiveTexture);
-            GL.BindTexture(TextureTarget.Texture2D, oldTexture);
-            GL.UseProgram(oldProgram);
-            if (oldViewport != null && oldViewport.Length == 4) GL.Viewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
-            
-            if (scissorEnabled) GL.Enable(EnableCap.ScissorTest);
-            if (blendEnabled) GL.Enable(EnableCap.Blend);
-            if (depthTestEnabled) GL.Enable(EnableCap.DepthTest);
-            if (cullFaceEnabled) GL.Enable(EnableCap.CullFace);
         }
+        
+        pboIndex++;
+
+        // Restore state
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, oldFbo);
+        GL.ActiveTexture((TextureUnit)oldActiveTexture);
+        GL.BindTexture(TextureTarget.Texture2D, oldTexture);
+        GL.UseProgram(oldProgram);
+        if (oldViewport != null && oldViewport.Length == 4) GL.Viewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
+        
+        if (scissorEnabled) GL.Enable(EnableCap.ScissorTest);
+        if (blendEnabled) GL.Enable(EnableCap.Blend);
+        if (depthTestEnabled) GL.Enable(EnableCap.DepthTest);
+        if (cullFaceEnabled) GL.Enable(EnableCap.CullFace);
     }
 
     private unsafe void WriteFrameRGB(EncoderBase encoder, Size size)
     {
         var bufferSize = DesiredSize.Width * DesiredSize.Height * 3;
+        InitializePBOs(bufferSize);
 
-        uint pbo;
-        GL.GenBuffers(1, out pbo);
+        int index = pboIndex % 2;
+        int nextIndex = (pboIndex + 1) % 2;
 
-        try
+        // Read pixels into current PBO
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
+        GL.ReadPixels(
+            0, 0,
+            size.Width, size.Height,
+            osuTK.Graphics.ES30.PixelFormat.Rgb,
+            PixelType.UnsignedByte,
+            IntPtr.Zero);
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+
+        // Process previous PBO
+        if (pboIndex > 0)
         {
-            // Set up PBO
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pbo);
-            GL.BufferData(
-                BufferTarget.PixelPackBuffer,
-                bufferSize,
-                IntPtr.Zero,
-                BufferUsageHint.StreamRead);
-
-            // Read pixels into PBO
-            GL.ReadPixels(
-                0, 0,
-                size.Width, size.Height,
-                osuTK.Graphics.ES30.PixelFormat.Rgb,
-                PixelType.UnsignedByte,
-                IntPtr.Zero);
-
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-
-            // Ensure read operations are complete
-            GL.Finish();
-
-            // Map PBO to client memory
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pbo);
-
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
             var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer,
                 IntPtr.Zero,
                 bufferSize,
@@ -290,7 +280,6 @@ public class GLRendererWrapper : RenderWrapper
             if (dataPtr != IntPtr.Zero)
                 try
                 {
-                    // Copy data directly from mapped memory to stream
                     var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), bufferSize);
                     encoder.WriteFrame(span);
                 }
@@ -298,12 +287,58 @@ public class GLRendererWrapper : RenderWrapper
                 {
                     GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
                 }
-        }
-        finally
-        {
-            // Cleanup
             GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-            GL.DeleteBuffers(1, ref pbo);
         }
+
+        pboIndex++;
+    }
+
+    private void InitializePBOs(int size)
+    {
+        if (pboInitialized && pboSize == size) return;
+        
+        if (pboInitialized)
+        {
+            GL.DeleteBuffers(2, pboIds);
+        }
+
+        GL.GenBuffers(2, pboIds);
+        for (int i = 0; i < 2; i++)
+        {
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[i]);
+            GL.BufferData(BufferTarget.PixelPackBuffer, size, IntPtr.Zero, BufferUsageHint.StreamRead);
+        }
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+        pboInitialized = true;
+        pboSize = size;
+    }
+
+    public override unsafe void Finish(EncoderBase encoder)
+    {
+        if (!pboInitialized) return;
+
+        // Process the last frame if any
+        if (pboIndex > 0)
+        {
+            int pendingIndex = (pboIndex - 1) % 2;
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
+            var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, pboSize, BufferAccessMask.MapReadBit);
+            if (dataPtr != IntPtr.Zero)
+            {
+                try
+                {
+                    var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), pboSize);
+                    encoder.WriteFrame(span);
+                }
+                finally
+                {
+                    GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
+                }
+            }
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+        }
+        
+        GL.DeleteBuffers(2, pboIds);
+        pboInitialized = false;
     }
 }

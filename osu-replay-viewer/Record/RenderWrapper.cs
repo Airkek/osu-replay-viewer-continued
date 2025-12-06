@@ -14,4 +14,5 @@ public abstract class RenderWrapper
         PixelFormat = pixelFormat;
     }
     public abstract void WriteFrame(EncoderBase encoder);
+    public virtual void Finish(EncoderBase encoder) { }
 }

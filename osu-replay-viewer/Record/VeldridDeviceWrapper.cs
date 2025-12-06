@@ -31,6 +31,11 @@ public class VeldridDeviceWrapper : RenderWrapper
     private readonly IGraphicsSurface graphicsSurface;
     private readonly GraphicsDevice Device;
 
+    private uint[] pboIds = new uint[2];
+    private int pboIndex = 0;
+    private bool pboInitialized = false;
+    private int pboSize = 0;
+
     public static bool IsSupported(IRenderer renderer)
     {
         return renderer.GetType() == VeldridRendererType || renderer.GetType() == DeferredRendererType;
@@ -80,6 +85,29 @@ public class VeldridDeviceWrapper : RenderWrapper
         graphicsSurface = graphicsSurfaceObj as IGraphicsSurface;
     }
 
+    private unsafe void InitializePBOs(int size)
+    {
+        if (pboInitialized && pboSize == size) return;
+        
+        if (pboInitialized)
+        {
+            OpenGLNative.glDeleteBuffers(1, ref pboIds[0]);
+            OpenGLNative.glDeleteBuffers(1, ref pboIds[1]);
+        }
+
+        OpenGLNative.glGenBuffers(1, out pboIds[0]);
+        OpenGLNative.glGenBuffers(1, out pboIds[1]);
+
+        for (int i = 0; i < 2; i++)
+        {
+            OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[i]);
+            OpenGLNative.glBufferData(BufferTarget.PixelPackBuffer, (UIntPtr)size, IntPtr.Zero.ToPointer(), BufferUsageHint.StreamRead);
+        }
+        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
+        pboInitialized = true;
+        pboSize = size;
+    }
+
     public ResourceFactory Factory
         => Device.ResourceFactory;
 
@@ -105,39 +133,29 @@ public class VeldridDeviceWrapper : RenderWrapper
             case GraphicsSurfaceType.OpenGL:
             {
                 var bufferSize = width * height * 3;
-
                 var info = Device.GetOpenGLInfo();
 
                 info.ExecuteOnGLThread(() =>
                 {
-                    uint pbo;
-                    OpenGLNative.glGenBuffers(1, out pbo);
+                    InitializePBOs(bufferSize);
+                    
+                    int index = pboIndex % 2;
+                    int nextIndex = (pboIndex + 1) % 2;
 
-                    try
+                    // Read pixels into current PBO
+                    OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
+                    OpenGLNative.glReadPixels(
+                        0, 0,
+                        texture.Width, texture.Height,
+                        GLPixelFormat.Rgb,
+                        GLPixelType.UnsignedByte,
+                        IntPtr.Zero.ToPointer());
+                    OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
+
+                    // Process previous PBO
+                    if (pboIndex > 0)
                     {
-                        // Set up PBO
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pbo);
-                        OpenGLNative.glBufferData(
-                            BufferTarget.PixelPackBuffer,
-                            (UIntPtr)bufferSize,
-                            IntPtr.Zero.ToPointer(),
-                            BufferUsageHint.StreamRead);
-
-                        // Read pixels into PBO
-                        OpenGLNative.glReadPixels(
-                            0, 0,
-                            texture.Width, texture.Height,
-                            GLPixelFormat.Rgb,
-                            GLPixelType.UnsignedByte,
-                            IntPtr.Zero.ToPointer());
-
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-
-                        // Ensure read operations are complete
-                        OpenGLNative.glFinish();
-
-                        // Map PBO to client memory
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pbo);
+                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
                         var dataPtr = OpenGLNative.glMapBuffer(
                             BufferTarget.PixelPackBuffer,
                             BufferAccess.ReadOnly);
@@ -145,7 +163,6 @@ public class VeldridDeviceWrapper : RenderWrapper
                         if (dataPtr != IntPtr.Zero.ToPointer())
                             try
                             {
-                                // Copy data directly from mapped memory to stream
                                 var span = new ReadOnlySpan<byte>(dataPtr, bufferSize);
                                 encoder.WriteFrame(span);
                             }
@@ -153,13 +170,10 @@ public class VeldridDeviceWrapper : RenderWrapper
                             {
                                 OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer);
                             }
-                    }
-                    finally
-                    {
-                        // Cleanup
                         OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-                        OpenGLNative.glDeleteBuffers(1, ref pbo);
                     }
+                    
+                    pboIndex++;
                 });
                 break;
             }
@@ -169,5 +183,41 @@ public class VeldridDeviceWrapper : RenderWrapper
                 throw new NotSupportedException("Currently only OpenGL is supported");
             }
         }
+    }
+
+    public override unsafe void Finish(EncoderBase encoder)
+    {
+        if (graphicsSurface.Type != GraphicsSurfaceType.OpenGL) return;
+        
+        var info = Device.GetOpenGLInfo();
+        info.ExecuteOnGLThread(() =>
+        {
+             if (!pboInitialized) return;
+
+            // Process the last frame if any
+            if (pboIndex > 0)
+            {
+                int pendingIndex = (pboIndex - 1) % 2;
+                OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
+                var dataPtr = OpenGLNative.glMapBuffer(BufferTarget.PixelPackBuffer, BufferAccess.ReadOnly);
+                if (dataPtr != IntPtr.Zero.ToPointer())
+                {
+                    try
+                    {
+                        var span = new ReadOnlySpan<byte>(dataPtr, pboSize);
+                        encoder.WriteFrame(span);
+                    }
+                    finally
+                    {
+                        OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer);
+                    }
+                }
+                OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
+            }
+            
+            OpenGLNative.glDeleteBuffers(1, ref pboIds[0]);
+            OpenGLNative.glDeleteBuffers(1, ref pboIds[1]);
+            pboInitialized = false;
+        });
     }
 }
