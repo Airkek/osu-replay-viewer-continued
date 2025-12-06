@@ -3,6 +3,7 @@ using Newtonsoft.Json;
 using System.IO;
 using Newtonsoft.Json.Converters;
 using osu_replay_renderer_netcore.CustomHosts;
+using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework;
 
 namespace osu_replay_renderer_netcore;
@@ -47,6 +48,12 @@ public class Config
         
     }
     [JsonProperty("ffmpeg_options")] public FFmpegOptionsObject FFmpegOptions = new();
+    
+    public class OutputOptionsObject
+    {
+        [JsonProperty("pixel_format")] public PixelFormatMode PixelFormat = PixelFormatMode.RGB;
+    }
+    [JsonProperty("output_options")] public OutputOptionsObject OutputOptions = new();
 
     [JsonProperty("game_settings")] public GameSettings GameSettings = new();
     

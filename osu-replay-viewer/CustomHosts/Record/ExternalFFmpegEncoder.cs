@@ -12,7 +12,16 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         {
             get
             {
-                var inputParameters = $"-y -f rawvideo -pix_fmt rgb24 -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS} -i pipe:";
+                string pixFmt = "rgb24";
+                string filters = "-vf \"vflip\"";
+                
+                if (Config.PixelFormat == PixelFormatMode.YUV420)
+                {
+                    pixFmt = "yuv420p";
+                    filters = ""; // Shader handles flip
+                }
+
+                var inputParameters = $"-y -f rawvideo -pix_fmt {pixFmt} -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS} -i pipe:";
 
                 var inputEffect = string.Empty;
                 var encoderSpecific = string.Empty;
@@ -30,7 +39,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                         break;
                 }
                 
-                var outputParameters = $"-c:v {Config.Encoder} -vf \"vflip\" {encoderSpecific} -pix_fmt yuv420p -preset {Config.Preset} {Config.OutputPath}";
+                var outputParameters = $"-c:v {Config.Encoder} {filters} {encoderSpecific} -pix_fmt yuv420p -preset {Config.Preset} {Config.OutputPath}";
                 return inputParameters + (string.IsNullOrWhiteSpace(inputEffect)? (" " + inputEffect) : "") + " " + outputParameters;
             }
         }

@@ -216,19 +216,25 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             if (type == GlRenderer.Auto)
             {
-                // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook 
-                
-                switch (RuntimeInfo.OS)
+                if (encoder.PixelFormat == PixelFormatMode.YUV420)
                 {
-                    case RuntimeInfo.Platform.Windows:
-                        type = GlRenderer.Veldrid;
-                        break;
-                    case RuntimeInfo.Platform.Linux:
-                    case RuntimeInfo.Platform.macOS:
-                        type = GlRenderer.Legacy;
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
+                    type = GlRenderer.Legacy;
+                }
+                else
+                {
+                    // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook 
+                    switch (RuntimeInfo.OS)
+                    {
+                        case RuntimeInfo.Platform.Windows:
+                            type = GlRenderer.Veldrid;
+                            break;
+                        case RuntimeInfo.Platform.Linux:
+                        case RuntimeInfo.Platform.macOS:
+                            type = GlRenderer.Legacy;
+                            break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
                 }
             }
 
@@ -251,7 +257,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
 
             SetupRendererAndWindow(rendererStr, GraphicsSurfaceType.OpenGL);
-            wrapper = CreateWrapper(Renderer, encoder.Config.Resolution);
+            wrapper = CreateWrapper(Renderer, encoder.Config.Resolution, encoder.Config.PixelFormat);
             if (wrapper is null)
             {
                 Console.Error.WriteLine($"Cannot create wrapper for renderer: {Renderer.GetType()}");
@@ -261,16 +267,16 @@ namespace osu_replay_renderer_netcore.CustomHosts
             Console.WriteLine($"Created '{type}' renderer. Type: {Renderer.GetType()}, wrapper: {wrapper.GetType()}");
         }
 
-        private static RenderWrapper CreateWrapper(IRenderer renderer, Size size)
+        private static RenderWrapper CreateWrapper(IRenderer renderer, Size size, PixelFormatMode pixelFormat)
         {
             if (VeldridDeviceWrapper.IsSupported(renderer))
             {
-                return new VeldridDeviceWrapper(renderer, size);
+                return new VeldridDeviceWrapper(renderer, size, pixelFormat);
             }
 
             if (GLRendererWrapper.IsSupported(renderer))
             {
-                return new GLRendererWrapper(renderer, size);
+                return new GLRendererWrapper(renderer, size, pixelFormat);
             }
             
             Console.WriteLine($"Unknown renderer: {renderer.GetType()}");

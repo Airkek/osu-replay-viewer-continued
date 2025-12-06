@@ -36,7 +36,7 @@ public class VeldridDeviceWrapper : RenderWrapper
         return renderer.GetType() == VeldridRendererType || renderer.GetType() == DeferredRendererType;
     }
 
-    public VeldridDeviceWrapper(IRenderer renderer, Size desiredSize) : base(desiredSize)
+    public VeldridDeviceWrapper(IRenderer renderer, Size desiredSize, PixelFormatMode pixelFormat) : base(desiredSize, pixelFormat)
     {
         object veldridDevice;
         if (renderer.GetType() == VeldridRendererType)
@@ -85,6 +85,11 @@ public class VeldridDeviceWrapper : RenderWrapper
 
     public override unsafe void WriteFrame(EncoderBase encoder)
     {
+        if (PixelFormat == PixelFormatMode.YUV420)
+        {
+            throw new NotImplementedException("YUV420 output is not supported with Veldrid renderer yet.");
+        }
+
         var texture = Device.SwapchainFramebuffer.ColorTargets[0].Target;
         
         var width = DesiredSize.Width;

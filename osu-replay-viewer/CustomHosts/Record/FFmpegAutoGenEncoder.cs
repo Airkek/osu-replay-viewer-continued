@@ -29,7 +29,11 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         private byte[] _pixelBuffer;
         protected override void _startInternal()
         {
-            _pixelBuffer = ArrayPool<byte>.Shared.Rent(Config.Resolution.Width * Config.Resolution.Height * 3); // RGB24
+            if (Config.PixelFormat == PixelFormatMode.RGB)
+            {
+                int bufferSize = Config.Resolution.Width * Config.Resolution.Height * 3;
+                _pixelBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+            }
             
             ffmpeg.avformat_network_init();
 
@@ -99,11 +103,14 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             _frame->height = _codecContext->height;
             ffmpeg.av_frame_get_buffer(_frame, 32);
 
-            // Setup SWS for RGB24->YUV420P
-            _swsContext = ffmpeg.sws_getContext(
-                Config.Resolution.Width, Config.Resolution.Height, AVPixelFormat.AV_PIX_FMT_RGB24,
-                Config.Resolution.Width, Config.Resolution.Height, AVPixelFormat.AV_PIX_FMT_YUV420P,
-                ffmpeg.SWS_POINT, null, null, null);
+            if (Config.PixelFormat == PixelFormatMode.RGB)
+            {
+                // Setup SWS for RGB24->YUV420P
+                _swsContext = ffmpeg.sws_getContext(
+                    Config.Resolution.Width, Config.Resolution.Height, AVPixelFormat.AV_PIX_FMT_RGB24,
+                    Config.Resolution.Width, Config.Resolution.Height, AVPixelFormat.AV_PIX_FMT_YUV420P,
+                    ffmpeg.SWS_POINT, null, null, null);
+            }
 
             // Open output file
             if (ffmpeg.avio_open(&_formatContext->pb, Config.OutputPath, ffmpeg.AVIO_FLAG_WRITE) < 0)
@@ -115,22 +122,61 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
         {
-            fixed (byte* srcPtr = _pixelBuffer)
+            fixed (byte* framePtr = frame)
             {
-                fixed (byte* framePtr = frame)
+                if (Config.PixelFormat == PixelFormatMode.RGB)
                 {
-                    // For some reason sws_scale crashes with ACCESS_VIOLATION when passing mapped PBO pointer :(
-                    // TODO: find a way to avoid copying this shit
-                    Buffer.MemoryCopy(framePtr, srcPtr, frame.Length, frame.Length);
-                }
-                
-                int srcStride = Config.Resolution.Width * 3;
-                byte*[] srcData = { srcPtr + (Config.Resolution.Height - 1) * srcStride, null, null, null };
-                int[] srcStrideArray = { -srcStride, 0, 0, 0 };
+                    fixed (byte* srcPtr = _pixelBuffer)
+                    {
+                        // For some reason sws_scale crashes with ACCESS_VIOLATION when passing mapped PBO pointer :(
+                        // TODO: find a way to avoid copying this shit
+                        Buffer.MemoryCopy(framePtr, srcPtr, _pixelBuffer.Length, frame.Length);
+                        
+                        int srcStride = Config.Resolution.Width * 3;
+                        byte*[] srcData = { srcPtr + (Config.Resolution.Height - 1) * srcStride, null, null, null };
+                        int[] srcStrideArray = { -srcStride, 0, 0, 0 };
 
-                // Convert to YUV420P with vertical flip
-                ffmpeg.sws_scale(_swsContext, srcData, srcStrideArray, 0, Config.Resolution.Height,
-                    _frame->data, _frame->linesize);
+                        // Convert to YUV420P with vertical flip
+                        ffmpeg.sws_scale(_swsContext, srcData, srcStrideArray, 0, Config.Resolution.Height,
+                            _frame->data, _frame->linesize);
+                    }
+                }
+                else
+                {
+                    // YUV420P input (already flipped by shader)
+                    byte* srcPtr = framePtr;
+                    int width = Config.Resolution.Width;
+                    int height = Config.Resolution.Height;
+                    int ySize = width * height;
+                    int uvSize = width * height / 4;
+
+                    // Y Plane
+                    byte* ySrc = srcPtr;
+                    byte* yDst = _frame->data[0];
+                    int yStride = _frame->linesize[0];
+                    for (int i = 0; i < height; i++)
+                    {
+                        Buffer.MemoryCopy(ySrc + i * width, yDst + i * yStride, yStride, width);
+                    }
+
+                    // U Plane
+                    byte* uSrc = srcPtr + ySize;
+                    byte* uDst = _frame->data[1];
+                    int uStride = _frame->linesize[1];
+                    for (int i = 0; i < height / 2; i++)
+                    {
+                        Buffer.MemoryCopy(uSrc + i * (width / 2), uDst + i * uStride, uStride, width / 2);
+                    }
+
+                    // V Plane
+                    byte* vSrc = srcPtr + ySize + uvSize;
+                    byte* vDst = _frame->data[2];
+                    int vStride = _frame->linesize[2];
+                    for (int i = 0; i < height / 2; i++)
+                    {
+                        Buffer.MemoryCopy(vSrc + i * (width / 2), vDst + i * vStride, vStride, width / 2);
+                    }
+                }
 
                 _frame->pts = _pts++;
 
@@ -196,7 +242,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             ffmpeg.avcodec_close(_codecContext);
             fixed (AVCodecContext** ctx = &_codecContext) ffmpeg.avcodec_free_context(ctx);
             fixed (AVFrame** frame = &_frame) ffmpeg.av_frame_free(frame);
-            ffmpeg.sws_freeContext(_swsContext);
+            if (_swsContext != null) ffmpeg.sws_freeContext(_swsContext);
             ffmpeg.avio_closep(&_formatContext->pb);
             ffmpeg.avformat_free_context(_formatContext);
 

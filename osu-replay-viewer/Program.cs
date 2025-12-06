@@ -243,6 +243,7 @@ namespace osu_replay_renderer_netcore
                         
                         // External only
                         FFmpegExec = orvConfig.FFmpegOptions.Executable,
+                        PixelFormat = orvConfig.OutputOptions.PixelFormat,
                     };
                     
                     FFmpegAudioTools.FFmpegExec = orvConfig.FFmpegOptions.Executable;
