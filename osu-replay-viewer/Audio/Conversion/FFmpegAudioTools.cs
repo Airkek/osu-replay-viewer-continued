@@ -11,114 +11,6 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
     {
         public static string FFmpegExec = "ffmpeg";
 
-        public static void WriteAudioToVideo(string video, AudioBuffer buff)
-        {
-            var tempFile = video + ".audio.mp4";
-
-            var args =
-                $"-y -i \"{video}\" -i - -c:v copy -c:a aac -b:a 256k -ar {buff.Format.SampleRate} -map 0:v -map 1:a \"{tempFile}\"";
-            Console.WriteLine($"Starting FFmpeg with arguments: {args}");
-
-            var ffmpeg = new Process
-            {
-                StartInfo =
-                {
-                    UseShellExecute = false,
-                    FileName = FFmpegExec,
-                    Arguments = args,
-                    RedirectStandardInput = true
-                }
-            };
-
-            try
-            {
-                ffmpeg.Start();
-                buff.WriteWave(ffmpeg.StandardInput.BaseStream);
-                ffmpeg.StandardInput.Close();
-                ffmpeg.WaitForExit();
-            }
-            finally
-            {
-                if (ffmpeg.ExitCode == 0)
-                {
-                    File.Delete(video);
-                    File.Move(tempFile, video);
-                }
-                else
-                {
-                    Console.Error.WriteLine("Failed to add audio to video");
-                    if (File.Exists(tempFile))
-                    {
-                        File.Delete(tempFile);
-                    }
-                }
-            }
-        }
-
-        public static void WriteAudioToMp3(string outputPath, AudioBuffer buff)
-        {
-            var tempFile = outputPath + ".tmp.mp3";
-
-            var args = $"-y -f wav -i - -c:a libmp3lame -b:a 256k -ar {buff.Format.SampleRate} \"{tempFile}\"";
-            Console.WriteLine($"Starting FFmpeg with arguments: {args}");
-
-            var ffmpeg = new Process
-            {
-                StartInfo =
-                {
-                    UseShellExecute = false,
-                    FileName = FFmpegExec,
-                    Arguments = args,
-                    RedirectStandardInput = true,
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true
-                }
-            };
-
-            try
-            {
-                ffmpeg.Start();
-                
-                buff.WriteWave(ffmpeg.StandardInput.BaseStream);
-                ffmpeg.StandardInput.Close();
-
-                ffmpeg.WaitForExit();
-
-                if (ffmpeg.ExitCode == 0)
-                {
-                    if (File.Exists(outputPath))
-                    {
-                        File.Delete(outputPath);
-                    }
-
-                    File.Move(tempFile, outputPath);
-                }
-                else
-                {
-                    Console.Error.WriteLine($"FFmpeg exited with code {ffmpeg.ExitCode}. Audio not written.");
-                    if (File.Exists(tempFile))
-                    {
-                        File.Delete(tempFile);
-                    }
-                }
-            }
-            finally
-            {
-                if (File.Exists(tempFile))
-                {
-                    try
-                    {
-                        File.Delete(tempFile);
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-        }
-
-
         public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0,
             double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 48000)
         {
@@ -193,6 +85,31 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             }
 
             return buffer;
+        }
+
+        public static void MuxAudioVideo(string videoPath, string audioPath, string outputPath)
+        {
+            var args = $"-y -i \"{videoPath}\" -i \"{audioPath}\" -c:v copy -c:a copy -map 0:v -map 1:a -shortest \"{outputPath}\"";
+            Console.WriteLine($"Starting FFmpeg muxing with arguments: {args}");
+
+            var ffmpeg = new Process
+            {
+                StartInfo =
+                {
+                    UseShellExecute = false,
+                    FileName = FFmpegExec,
+                    Arguments = args,
+                    CreateNoWindow = true
+                }
+            };
+
+            ffmpeg.Start();
+            ffmpeg.WaitForExit();
+            
+            if (ffmpeg.ExitCode != 0)
+            {
+                Console.Error.WriteLine("Failed to mux audio and video");
+            }
         }
     }
 }
