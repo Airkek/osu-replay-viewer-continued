@@ -51,6 +51,13 @@ namespace osu_replay_renderer_netcore
             OnFailed?.Invoke();
             this.Push(CreateResults(GivenScore.ScoreInfo));
         }
+
+        public override void OnSuspending(ScreenTransitionEvent e)
+        {
+            // Suppress debug assertion
+            ValidForResume = true;
+            base.OnSuspending(e);
+        }
         
         protected override bool CheckModsAllowFailure()
         {
