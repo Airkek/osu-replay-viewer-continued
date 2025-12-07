@@ -395,7 +395,7 @@ namespace osu_replay_renderer_netcore
             }
 
             Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer, SkipIntro);
-            
+
             Player.OnFailed += () =>
             {
                 (Host as ReplayRecordGameHost)?.AudioEnded();

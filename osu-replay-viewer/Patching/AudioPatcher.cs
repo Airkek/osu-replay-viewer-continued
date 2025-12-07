@@ -21,14 +21,12 @@ namespace osu_replay_renderer_netcore.Patching
         public static event Action<PoolableSkinnableSample> OnSkinSampleStop;
         public static event Action<ITrack> OnTrackPlay;
         public static event Action<ITrack> OnTrackSeek;
-        public static event Action<ITrack> OnTrackStop;
 
         private static void TriggerOnSamplePlay(ISample sample) => OnSamplePlay?.Invoke(sample);
         private static void TriggerOnSkinSamplePlay(PoolableSkinnableSample sample) => OnSkinSamplePlay?.Invoke(sample);
         private static void TriggerOnSkinSampleStop(PoolableSkinnableSample sample) => OnSkinSampleStop?.Invoke(sample);
         private static void TriggerOnTrackPlay(ITrack track) => OnTrackPlay?.Invoke(track);
         private static void TriggerOnTrackSeek(ITrack track) => OnTrackSeek?.Invoke(track);
-        private static void TriggerOnTrackStop(ITrack track) => OnTrackStop?.Invoke(track);
 
         [HarmonyPatch(typeof(Sample))]
         [HarmonyPatch("Play")]
@@ -81,17 +79,6 @@ namespace osu_replay_renderer_netcore.Patching
             static void Postfix(TrackBass __instance)
             {
                 TriggerOnTrackSeek(__instance);
-            }
-        }
-
-        [HarmonyPatch(typeof(TrackBass))]
-        [HarmonyPatch("Stop")]
-        class TrackBassStopPatch
-        {
-            static bool Prefix(TrackBass __instance)
-            {
-                TriggerOnTrackStop(__instance);
-                return false;
             }
         }
     }
