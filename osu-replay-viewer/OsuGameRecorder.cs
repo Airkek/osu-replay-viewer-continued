@@ -107,10 +107,18 @@ namespace osu_replay_renderer_netcore
                 skin.PerformRead(_ => { });
                 return skin;
             }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("Cannot improt skin");
+                Console.Error.WriteLine(e);
+            }
             finally
             {
                 File.Delete(tmpFile);
             }
+            
+            Exit();
+            return null;
         }
 
         public Live<BeatmapSetInfo> ImportBeatmapSet(string beatmapSetPath)
@@ -150,10 +158,18 @@ namespace osu_replay_renderer_netcore
                 beatmap.PerformRead(_ => { });
                 return beatmap;
             }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine(("Cannot import beatmapset"));
+                Console.Error.WriteLine(e);
+            }
             finally
             {
                 File.Delete(tmpFile);
             }
+            
+            Exit();
+            return null;
         }
         
         public void SelectSkin(Live<SkinInfo> skin)
