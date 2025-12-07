@@ -8,17 +8,16 @@ using osu_replay_renderer_netcore.Audio;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu_replay_renderer_netcore.Patching;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu_replay_renderer_netcore.Record;
 using osu.Framework.Audio.Sample;
-using osu.Framework.Graphics.Audio;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Rendering;
 using osu.Game.Skinning;
@@ -54,13 +53,10 @@ namespace osu_replay_renderer_netcore.CustomHosts
         
         private readonly bool isFinishFramePatched;
         private readonly bool isAudioPatched;
-        
-        private readonly StreamingAudioMixer audioMixer = new(new AudioFormat { Channels = 2, SampleRate = 44100, PCMSize = 2 });
-        private ExternalAudioEncoder audioEncoder;
-        private double lastAudioTime = 0;
 
+        private readonly AudioJournal audioJournal = new();
         private AudioBuffer audioTrack = null;
-        private StreamingAudioMixer.ActiveVoice audioTrackVoice = null;
+        private AudioJournal.SampleStopper audioStopper = null;
         private bool isAudioPlayed = false;
         public bool NeedAudio => isAudioPatched && audioTrack is null;
         
@@ -89,18 +85,21 @@ namespace osu_replay_renderer_netcore.CustomHosts
             audioTrack = track;
         }
 
+        public void AudioEnded()
+        {
+            if (!isAudioPatched || !isAudioPlayed)
+            {
+                return;
+            }
+
+            Console.WriteLine($"Cropping audio on frame #{recordClock.CurrentFrame}");
+            audioStopper?.Invoke(recordClock.CurrentTime / 1000);
+        }
+
         public void StartRecording()
         {
             timer.Reset();
             encoder.Start();
-            
-            if (isAudioPatched)
-            {
-                var audioPath = encoder.Config.OutputPath + ".audio.aac";
-                audioEncoder = new ExternalAudioEncoder(audioPath, 44100, 2, encoder.Config.FFmpegExec);
-                audioEncoder.Start();
-                lastAudioTime = 0;
-            }
         }
 
         public void FinishRecording()
@@ -109,29 +108,15 @@ namespace osu_replay_renderer_netcore.CustomHosts
             encoder.Finish();
             timer.Stop();
 
-            if (isAudioPatched && audioEncoder != null)
+            if (isAudioPatched)
             {
-                audioEncoder.Finish();
-                Console.WriteLine("Muxing audio and video...");
+                var buff = FinishAudio();
+                Console.WriteLine("Writing audio");
                 var sw = new Stopwatch();
                 sw.Start();
-                
-                // Mux
-                var videoPath = encoder.Config.OutputPath;
-                var audioPath = audioEncoder.OutputPath;
-                var tempOutput = videoPath + ".muxed.mp4";
-                
-                FFmpegAudioTools.MuxAudioVideo(videoPath, audioPath, tempOutput);
-                
-                if (File.Exists(tempOutput))
-                {
-                    File.Delete(videoPath);
-                    File.Delete(audioPath);
-                    File.Move(tempOutput, videoPath);
-                }
-                
+                FFmpegAudioTools.WriteAudioToVideo(encoder.Config.OutputPath, buff);
                 sw.Stop();
-                Console.WriteLine($"Muxing done in {sw.ElapsedMilliseconds}ms");
+                Console.WriteLine($"Writing audio done in {sw.ElapsedMilliseconds}ms");
             }
 
             _fpsContainer.Sort();
@@ -158,19 +143,10 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
                 var startOffset = (track.CurrentTime / 1000f) / track.Rate;
                 Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
-                
-                if (audioTrackVoice != null) audioTrackVoice.Stopped = true;
-                
-                if (audioTrack is not null)
+                if (audioTrack is not null && audioJournal is not null)
                 {
-                    audioTrackVoice = audioMixer.AddVoice(audioTrack);
-                    audioTrackVoice.Position = startOffset * audioTrack.Format.SampleRate;
+                    audioStopper = audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, startOffset, audioTrack);
                 };
-            };
-
-            AudioPatcher.OnTrackStop += track =>
-            {
-                AudioEnded();
             };
 
             AudioPatcher.OnTrackSeek += track =>
@@ -182,48 +158,33 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
                 var startOffset = (track.CurrentTime / 1000f) / track.Rate;
                 Console.WriteLine($"Audio Rendering: Track seek to {startOffset} at frame #{recordClock.CurrentFrame}");
-                if (audioTrackVoice != null) audioTrackVoice.Stopped = true;
-
-                if (audioTrack is not null)
+                audioStopper?.Invoke(recordClock.CurrentTime / 1000f);
+                if (audioTrack is not null && audioJournal is not null)
                 {
-                    audioTrackVoice = audioMixer.AddVoice(audioTrack);
-                    audioTrackVoice.Position = startOffset * audioTrack.Format.SampleRate;
+                    audioStopper = audioJournal.BufferAt(recordClock.CurrentTime / 1000.0, startOffset, audioTrack);
                 }
             };
 
             var registerSample = (ISample sample) =>
             {
-                if (sample is null)
+                if (sample is null || audioJournal is null)
                 {
                     return null;
                 }
 
-                // We need to get the buffer from the sample.
-                int recursionAllowed = 50;
-                while (sample is DrawableSample sample2 && recursionAllowed > 0)
+                var stopper = audioJournal.SampleAt(recordClock.CurrentTime / 1000.0, sample, buff =>
                 {
-                    sample = sample2.GetUnderlaying();
-                    recursionAllowed--;
-                }
-                if (sample is SampleVirtual) return null;
-                if (!sample.IsSampleBass()) return null;
+                    buff = buff.CreateCopy();
+                    if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
+                    {
+                        buff.SoundTouchAll(p => p.Pitch = sample.AggregateFrequency.Value);
+                    }
 
-                var bass = sample.AsSampleBass();
-                if (bass.SampleId == 0) return null;
+                    buff.Process(x => x * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
+                    return buff;
+                });
 
-                var buff = bass.AsAudioBuffer();
-                if (buff == null) return null;
-
-                // Process buffer
-                buff = buff.CreateCopy();
-                if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
-                {
-                    buff.SoundTouchAll(p => p.Pitch = sample.AggregateFrequency.Value);
-                }
-                buff.Process(x => x * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
-
-                var voice = audioMixer.AddVoice(buff);
-                return voice;
+                return stopper;
             };
             
             AudioPatcher.OnSamplePlay += sample =>
@@ -231,36 +192,23 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 registerSample(sample);
             };
             
-            var skinSampleVoices = new Dictionary<PoolableSkinnableSample, StreamingAudioMixer.ActiveVoice>();
+            var skinSampleStoppers = new Dictionary<PoolableSkinnableSample, AudioJournal.SampleStopper>();
             AudioPatcher.OnSkinSamplePlay += skinableSample =>
             {
-                var voice = registerSample(skinableSample.Sample);
-                if (voice is not null)
+                var stopper = registerSample(skinableSample.Sample);
+                if (stopper is not null)
                 {
-                    skinSampleVoices[skinableSample] = voice;
+                    skinSampleStoppers[skinableSample] = stopper;
                 }
             };
 
             AudioPatcher.OnSkinSampleStop += skinableSample =>
             {
-                if (skinSampleVoices.Remove(skinableSample, out var voice))
+                if (skinSampleStoppers.Remove(skinableSample, out var stopper))
                 {
-                    voice.Stopped = true;
+                    stopper(recordClock.CurrentTime / 1000.0);
                 }
             };
-        }
-
-        public void AudioEnded()
-        {
-            if (!isAudioPlayed) return;
-            isAudioPlayed = false;
-                
-            Console.WriteLine($"Audio Rendering: Track stopped at frame #{recordClock.CurrentFrame}");
-            if (audioTrackVoice != null)
-            {
-                audioTrackVoice.Stopped = true;
-                audioTrackVoice = null;
-            }
         }
 
         protected override void ChooseAndSetupRenderer()
@@ -336,6 +284,22 @@ namespace osu_replay_renderer_netcore.CustomHosts
             throw new NotImplementedException($"Unknown renderer: {renderer.GetType()}");
         }
 
+        private AudioBuffer FinishAudio()
+        {
+            if (!isAudioPatched)
+            {
+                return null;
+            }
+            var buff = AudioBuffer.FromSeconds(new AudioFormat
+            {
+                Channels = audioTrack?.Format.Channels ?? 2,
+                SampleRate = audioTrack?.Format.SampleRate ?? 48000,
+                PCMSize = audioTrack?.Format.PCMSize ?? 2
+            }, recordClock.CurrentTime / 1000f);
+            audioJournal.MixSamples(buff);
+            buff.Process(x => Math.Tanh(x));
+            return buff;
+        }
 
         protected override void SetupForRun()
         {
@@ -434,25 +398,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
 
             wrapper.WriteFrame(encoder);
-            
-            // Audio mixing
-            if (isAudioPatched && audioEncoder != null)
-            {
-                double currentTime = recordClock.CurrentTime / 1000.0;
-                double deltaTime = currentTime - lastAudioTime;
-                
-                if (deltaTime > 0)
-                {
-                    int samplesToMix = (int)(deltaTime * audioMixer.Format.SampleRate);
-                    if (samplesToMix > 0)
-                    {
-                        var mixedData = audioMixer.MixChunk(samplesToMix);
-                        audioEncoder.Write(mixedData);
-                        lastAudioTime += (double)samplesToMix / audioMixer.Format.SampleRate;
-                    }
-                }
-            }
-
             recordClock.CurrentFrame++;
 
             PrintFps();
