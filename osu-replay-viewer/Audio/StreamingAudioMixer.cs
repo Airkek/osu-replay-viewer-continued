@@ -58,7 +58,7 @@ namespace osu_replay_renderer_netcore.Audio
                     continue;
                 }
 
-                if (Math.Abs(rateRatio - 1.0) < double.Epsilon && voice.Buffer.Format.Channels == Format.Channels)
+                if (Math.Abs(rateRatio - 1.0) < double.Epsilon)
                 {
                     // Same sample rate - fast path
                     int samplesAvailable = voice.Buffer.Samples - (int)voice.Position;
@@ -101,23 +101,9 @@ namespace osu_replay_renderer_netcore.Audio
                         for (int ch = 0; ch < Format.Channels; ch++)
                         {
                             int destIdx = j * Format.Channels + ch;
-
-                            int inputChannel = ch;
-                            if (inputChannel >= voice.Buffer.Format.Channels)
-                            {
-                                // If source is mono, duplicate to all channels
-                                if (voice.Buffer.Format.Channels == 1) inputChannel = 0;
-                                else inputChannel = -1;
-                            }
-
-                            float s1 = 0f;
-                            float s2 = 0f;
-
-                            if (inputChannel != -1)
-                            {
-                                s1 = voice.Buffer[inputChannel, srcIndex];
-                                s2 = (srcIndex + 1 < voice.Buffer.Samples) ? voice.Buffer[inputChannel, srcIndex + 1] : s1;
-                            }
+                            
+                            float s1 = voice.Buffer[ch, srcIndex];
+                            float s2 = (srcIndex + 1 < voice.Buffer.Samples) ? voice.Buffer[ch, srcIndex + 1] : s1;
                             
                             mixBuffer[destIdx] += s1 * (1f - mix) + s2 * mix;
                         }
