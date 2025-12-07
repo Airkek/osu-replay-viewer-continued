@@ -55,7 +55,7 @@ namespace osu_replay_renderer_netcore
         public override void OnSuspending(ScreenTransitionEvent e)
         {
             // Suppress debug assertion
-            ValidForResume = true;
+            ValidForResume = false;
             base.OnSuspending(e);
         }
         
