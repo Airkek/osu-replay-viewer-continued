@@ -46,10 +46,19 @@ namespace osu_replay_renderer_netcore.Audio
             var buff = new AudioBuffer(format, samples);
             for (int i = 0; i < samples * format.Channels; i++)
             {
+                const float pcm8MaxValue = byte.MaxValue;
+                const float pcm16MaxValue = short.MaxValue;
+                const float pcm24MaxValue = 1 << 23; // 24 bit signed int max value
+                const float pcm32MaxValue = int.MaxValue;
+                
                 buff.Data[i] = format.PCMSize switch
                 {
-                    1 => bytes[i] / (float)byte.MaxValue,
-                    2 => BitConverter.ToInt16(bytes, i * format.PCMSize) / (float)short.MaxValue,
+                    1 => bytes[i] / pcm8MaxValue,
+                    2 => BitConverter.ToInt16(bytes, i * format.PCMSize) / pcm16MaxValue,  
+                    3 => ((bytes[i * format.PCMSize] & 0xFF) | 
+                         ((bytes[i * format.PCMSize + 1] & 0xFF) << 8) | 
+                         ((bytes[i * format.PCMSize + 2] & 0xFF) << 16)) / pcm24MaxValue,
+                    4 => BitConverter.ToInt32(bytes, i * format.PCMSize) / pcm32MaxValue,
                     _ => 0f
                 };
             }
