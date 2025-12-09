@@ -51,9 +51,30 @@ namespace osu_replay_renderer_netcore.Audio
 
         public byte[] AmpToBytes(float amp)
         {
-            if (PCMSize == 1) return new byte[] { (byte) Math.Floor(amp * 255f) };
-            if (PCMSize == 2) return BitConverter.GetBytes((short)(amp * 32767f));
-            return null;
+            const float pcm8MaxValue = byte.MaxValue;
+            const float pcm16MaxValue = short.MaxValue;
+            const float pcm24MaxValue = 1 << 23; // 24 bit signed int max value
+            const float pcm32MaxValue = int.MaxValue;
+
+            switch (PCMSize)
+            {
+                case 1:
+                    return [(byte)Math.Floor(amp * pcm8MaxValue)];
+                case 2:
+                    return BitConverter.GetBytes((short)(amp * pcm16MaxValue));
+                case 3:
+                    var value24 = (int)(amp * pcm24MaxValue);
+                    return
+                    [
+                        (byte)(value24 & 0xFF),
+                        (byte)((value24 >> 8) & 0xFF),
+                        (byte)((value24 >> 16) & 0xFF)
+                    ];
+                case 4:
+                    return BitConverter.GetBytes((int)(amp * pcm32MaxValue));
+                default:
+                    return null;
+            }
         }
 
         public override string ToString() => $"AudioFormat({SampleRate}Hz, {Channels} channels, {PCMBits} bits)";
