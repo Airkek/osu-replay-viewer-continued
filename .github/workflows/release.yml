@@ -27,11 +27,19 @@ jobs:
         run: |
           dotnet publish -c ${{ matrix.config }} -r ${{ matrix.runtime }} --self-contained true -o publish
 
+      - name: Archive Release
+        run: |
+          if [[ "${{ matrix.runtime }}" == *win-* || "${{ matrix.runtime }}" == *osx-* ]]; then
+            cd publish && zip -r "../app-${{ matrix.config }}-${{ matrix.runtime }}.zip" .
+          else
+            tar -czf "app-${{ matrix.config }}-${{ matrix.runtime }}.tar.gz" -C publish .
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-${{ matrix.config }}-${{ matrix.runtime }}
-          path: publish/
+          path: app-${{ matrix.config }}-${{ matrix.runtime }}.*
 
   create-release:
     needs: build
@@ -44,18 +52,6 @@ jobs:
         with:
           path: artifacts
 
-      - name: Prepare release assets
-        run: |
-          mkdir -p release-assets
-          for dir in artifacts/*/; do
-            dir_name=$(basename "$dir")
-            if [[ "$dir_name" == *win-* || "$dir_name" == *osx-* ]]; then
-              (cd "$dir" && zip -r "../../release-assets/${dir_name}.zip" .)
-            else
-              tar -czf "release-assets/${dir_name}.tar.gz" -C "$dir" .
-            fi
-          done
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -63,6 +59,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-assets/*
+            artifacts/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
