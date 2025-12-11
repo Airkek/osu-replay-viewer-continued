@@ -65,6 +65,14 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             _codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
             _codecContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
 
+            if (Config.PixelFormat == PixelFormatMode.YUV420)
+            {
+                _codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT709;
+                _codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT709;
+                _codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_BT709;
+                _codecContext->color_range = AVColorRange.AVCOL_RANGE_MPEG;
+            }
+
             // Set encoder options
             var dict = new Dictionary<string, string>();
             dict["preset"] = Config.Preset;
