@@ -70,7 +70,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 _codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT709;
                 _codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT709;
                 _codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_BT709;
-                _codecContext->color_range = AVColorRange.AVCOL_RANGE_MPEG;
+                _codecContext->color_range = AVColorRange.AVCOL_RANGE_JPEG;
             }
 
             // Set encoder options

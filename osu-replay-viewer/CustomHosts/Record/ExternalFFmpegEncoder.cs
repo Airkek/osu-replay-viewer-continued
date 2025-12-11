@@ -20,7 +20,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 {
                     pixFmt = "yuv420p";
                     filters = ""; // Shader handles flip
-                    colorFlags = "-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv";
+                    colorFlags = "-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range pc";
                 }
 
                 var inputParameters = $"-y -f rawvideo -pix_fmt {pixFmt} -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS} -i pipe:";
