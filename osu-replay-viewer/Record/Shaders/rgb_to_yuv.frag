@@ -25,8 +25,8 @@ void main() {
         vec2 srcCoord = vec2((destX + 0.5) / W, (srcY + 0.5) / H);
         rgb = texture(uTexture, srcCoord).rgb;
         
-        // Y (BT.601 Full Range coefficients)
-        fragColor = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+        // Y (BT.709 Full Range coefficients)
+        fragColor = 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
         
     } else {
         // U or V Plane
@@ -59,11 +59,11 @@ void main() {
         rgb = texture(uTexture, srcCoord).rgb;
         
         if (isU) {
-            // U (BT.601 Full Range coefficients, with +0.5 offset)
-            fragColor = -0.1687 * rgb.r - 0.3312 * rgb.g + 0.5000 * rgb.b + 0.5;
+            // U (BT.709 Full Range coefficients, with +0.5 offset)
+            fragColor = -0.1146 * rgb.r - 0.3854 * rgb.g + 0.5000 * rgb.b + 0.5;
         } else {
-            // V (BT.601 Full Range coefficients, with +0.5 offset)
-            fragColor = 0.5000 * rgb.r - 0.4186 * rgb.g - 0.0813 * rgb.b + 0.5;
+            // V (BT.709 Full Range coefficients, with +0.5 offset)
+            fragColor = 0.5000 * rgb.r - 0.4542 * rgb.g - 0.0458 * rgb.b + 0.5;
         }
     }
 }
