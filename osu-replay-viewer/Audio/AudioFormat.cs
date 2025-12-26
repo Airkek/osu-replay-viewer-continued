@@ -46,24 +46,27 @@ namespace osu_replay_renderer_netcore.Audio
 
         public WaveFormat ToBass()
         {
-            return new WaveFormat(SampleRate, BytesPerSample * 8, Channels);
+            return new WaveFormat(SampleRate, PCMSize * 8, Channels);
         }
 
         public byte[] AmpToBytes(float amp)
         {
-            const float pcm8MaxValue = byte.MaxValue;
-            const float pcm16MaxValue = short.MaxValue;
-            const float pcm24MaxValue = 1 << 23; // 24 bit signed int max value
-            const float pcm32MaxValue = int.MaxValue;
+            var clamped = Math.Clamp(amp, -1f, 1f);
+
+            const float pcm8MaxValue = byte.MaxValue;          // unsigned 0..255
+            const float pcm16MaxValue = short.MaxValue;        // signed
+            const float pcm24MaxValue = 0x7FFFFF;              // 24-bit signed max
+            const float pcm32MaxValue = int.MaxValue;          // signed
 
             switch (PCMSize)
             {
                 case 1:
-                    return [(byte)Math.Floor(amp * pcm8MaxValue)];
+                    // 8-bit PCM is unsigned; map -1..1 to 0..255 with rounding.
+                    return [(byte)MathF.Round((clamped * 0.5f + 0.5f) * pcm8MaxValue)];
                 case 2:
-                    return BitConverter.GetBytes((short)(amp * pcm16MaxValue));
+                    return BitConverter.GetBytes((short)MathF.Round(clamped * pcm16MaxValue));
                 case 3:
-                    var value24 = (int)(amp * pcm24MaxValue);
+                    var value24 = (int)MathF.Round(clamped * pcm24MaxValue);
                     return
                     [
                         (byte)(value24 & 0xFF),
@@ -71,7 +74,7 @@ namespace osu_replay_renderer_netcore.Audio
                         (byte)((value24 >> 16) & 0xFF)
                     ];
                 case 4:
-                    return BitConverter.GetBytes((int)(amp * pcm32MaxValue));
+                    return BitConverter.GetBytes((int)MathF.Round(clamped * pcm32MaxValue));
                 default:
                     return null;
             }

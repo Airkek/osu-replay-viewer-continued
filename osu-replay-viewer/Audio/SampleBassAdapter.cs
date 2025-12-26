@@ -1,4 +1,5 @@
-﻿using osu.Framework.Audio.Mixing;
+﻿using ManagedBass;
+using osu.Framework.Audio.Mixing;
 using osu.Framework.Audio.Sample;
 using System;
 using System.Reflection;
@@ -28,41 +29,66 @@ namespace osu_replay_renderer_netcore.Audio
 
         public AudioBuffer AsAudioBuffer()
         {
-            var info = ManagedBass.Bass.SampleGetInfo(SampleId);
-            
-            if (info.Channels < 1) return null;
-            
+            var info = Bass.SampleGetInfo(SampleId);
+
+            if (info.Channels < 1 || info.Length <= 0)
+                return null;
+
+            // BASS exposes either OriginalResolution or flags describing the stored sample depth.
+            var pcmBits = info.OriginalResolution > 0
+                ? info.OriginalResolution
+                : info.Flags.HasFlag(BassFlags.Float) ? 32
+                : info.Flags.HasFlag(BassFlags.Byte) ? 8
+                : 16;
+
             var format = new AudioFormat
             {
                 Channels = info.Channels,
                 SampleRate = info.Frequency,
-                PCMSize = (int)Math.Ceiling(info.Length / (info.Channels * info.Frequency * (TargetedSample.Length / 1000.0)))
+                PCMSize = Math.Max(1, pcmBits / 8)
             };
 
-            var samples = info.Length / format.PCMSize / format.Channels;
+            var bytesPerFrame = format.PCMSize * format.Channels;
+            var samples = info.Length / bytesPerFrame;
+
             var bytes = new byte[info.Length];
-            ManagedBass.Bass.SampleGetData(SampleId, bytes);
+            Bass.SampleGetData(SampleId, bytes);
 
             var buff = new AudioBuffer(format, samples);
+            var isFloat = info.Flags.HasFlag(BassFlags.Float);
+
             for (int i = 0; i < samples * format.Channels; i++)
             {
-                const float pcm8MaxValue = byte.MaxValue;
-                const float pcm16MaxValue = short.MaxValue;
-                const float pcm24MaxValue = 1 << 23; // 24 bit signed int max value
-                const float pcm32MaxValue = int.MaxValue;
-                
+                var offset = i * format.PCMSize;
+
                 buff.Data[i] = format.PCMSize switch
                 {
-                    1 => bytes[i] / pcm8MaxValue,
-                    2 => BitConverter.ToInt16(bytes, i * format.PCMSize) / pcm16MaxValue,  
-                    3 => ((bytes[i * format.PCMSize] & 0xFF) | 
-                         ((bytes[i * format.PCMSize + 1] & 0xFF) << 8) | 
-                         ((bytes[i * format.PCMSize + 2] & 0xFF) << 16)) / pcm24MaxValue,
-                    4 => BitConverter.ToInt32(bytes, i * format.PCMSize) / pcm32MaxValue,
+                    1 => (bytes[offset] - 128) / 128f, // 8-bit PCM is unsigned
+                    2 => BitConverter.ToInt16(bytes, offset) / (float)short.MaxValue,
+                    3 => Read24Bit(bytes, offset),
+                    4 => isFloat
+                        ? BitConverter.ToSingle(bytes, offset)
+                        : BitConverter.ToInt32(bytes, offset) / (float)int.MaxValue,
                     _ => 0f
                 };
             }
+
             return buff;
+
+            static float Read24Bit(byte[] buffer, int offset)
+            {
+                const float pcm24MaxValue = 0x7FFFFF; // (1 << 23) - 1
+
+                var sample = buffer[offset]
+                            | (buffer[offset + 1] << 8)
+                            | (buffer[offset + 2] << 16);
+
+                // Sign-extend the 24-bit value to 32-bit int
+                if ((sample & 0x800000) != 0)
+                    sample |= unchecked((int)0xFF000000);
+
+                return sample / pcm24MaxValue;
+            }
         }
     }
 }
