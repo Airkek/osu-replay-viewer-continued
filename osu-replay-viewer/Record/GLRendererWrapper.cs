@@ -33,6 +33,38 @@ public class GLRendererWrapper : RenderWrapper
     private bool pboInitialized = false;
     private int pboSize = 0;
 
+    private void WithGLContext(Action action)
+    {
+        var windowContext = openGLSurface.WindowContext;
+        if (windowContext == IntPtr.Zero)
+            throw new InvalidOperationException("OpenGL window context is not available.");
+
+        var previousContext = openGLSurface.CurrentContext;
+        bool needSwitch = previousContext != windowContext;
+
+        if (needSwitch)
+            openGLSurface.MakeCurrent(windowContext);
+
+        try
+        {
+            action();
+        }
+        finally
+        {
+            if (needSwitch)
+            {
+                if (previousContext != IntPtr.Zero)
+                {
+                    openGLSurface.MakeCurrent(previousContext);
+                }
+                else
+                {
+                    openGLSurface.ClearCurrent();
+                }
+            }
+        }
+    }
+
     private void InitializeResources()
     {
         if (resourcesInitialized) return;
@@ -137,14 +169,17 @@ public class GLRendererWrapper : RenderWrapper
         var size = surface.GetDrawableSize();
         if (size.Width != DesiredSize.Width || size.Height != DesiredSize.Height) return;
 
-        if (PixelFormat == PixelFormatMode.RGB)
+        WithGLContext(() =>
         {
-            WriteFrameRGB(encoder, size);
-        }
-        else
-        {
-            WriteFrameYUV(encoder, size);
-        }
+            if (PixelFormat == PixelFormatMode.RGB)
+            {
+                WriteFrameRGB(encoder, size);
+            }
+            else
+            {
+                WriteFrameYUV(encoder, size);
+            }
+        });
     }
 
     private unsafe void WriteFrameYUV(EncoderBase encoder, Size size)
@@ -317,28 +352,31 @@ public class GLRendererWrapper : RenderWrapper
     {
         if (!pboInitialized) return;
 
-        // Process the last frame if any
-        if (pboIndex > 0)
+        WithGLContext(() =>
         {
-            int pendingIndex = (pboIndex - 1) % 2;
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
-            var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, pboSize, BufferAccessMask.MapReadBit);
-            if (dataPtr != IntPtr.Zero)
+            // Process the last frame if any
+            if (pboIndex > 0)
             {
-                try
+                int pendingIndex = (pboIndex - 1) % 2;
+                GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
+                var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, pboSize, BufferAccessMask.MapReadBit);
+                if (dataPtr != IntPtr.Zero)
                 {
-                    var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), pboSize);
-                    encoder.WriteFrame(span);
+                    try
+                    {
+                        var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), pboSize);
+                        encoder.WriteFrame(span);
+                    }
+                    finally
+                    {
+                        GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
+                    }
                 }
-                finally
-                {
-                    GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
-                }
+                GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
             }
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-        }
-        
-        GL.DeleteBuffers(2, pboIds);
-        pboInitialized = false;
+            
+            GL.DeleteBuffers(2, pboIds);
+            pboInitialized = false;
+        });
     }
 }
