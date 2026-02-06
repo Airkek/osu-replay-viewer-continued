@@ -188,6 +188,7 @@ namespace osu_replay_renderer_netcore
                     Console.WriteLine($"IMPORTED_BEATMAPSET_ONLINE_ID::{beatmap.Value.OnlineID}");
                     Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_IDS::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.ID))}");
                     Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_HASHES::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.Hash))}");
+                    Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_MD5HASHES::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.MD5Hash))}");
                     Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_ONLINE_IDS::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.OnlineID))}");
                 }
                 return beatmap;
