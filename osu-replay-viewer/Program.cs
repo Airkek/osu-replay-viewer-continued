@@ -42,6 +42,8 @@ namespace osu_replay_renderer_netcore
             OptionDescription applySkin;
             OptionDescription listSkins;
             OptionDescription beatmapImport;
+            OptionDescription extendedImportInfo;
+            OptionDescription preserveImportedFiles;
             
             CommandLineProcessor cli = new()
             {
@@ -73,7 +75,7 @@ namespace osu_replay_renderer_netcore
                     osuGameName = new()
                     {
                         Name = "osu!lazer mode",
-                        Description = "Use osu!lazer data (songs, skins, replays)",
+                        Description = "Use osu!lazer data (songs, skins, replays), possible data loss!",
                         DoubleDashes = new[] { "osu-mode" },
                         SingleDash = new[] { "osu" }
                     },
@@ -158,7 +160,7 @@ namespace osu_replay_renderer_netcore
                         Description = "Select a skin to use in replay",
                         DoubleDashes = new[] { "skin" },
                         SingleDash = new[] { "skin", "s" },
-                        Parameters = new[] { "Type (import/select)", "Skin name/File.osk" }
+                        Parameters = new[] { "Type (import/select/match/id)", "Skin name/File.osk/Partial name/Id" }
                     },
                     listSkins = new()
                     {
@@ -166,7 +168,21 @@ namespace osu_replay_renderer_netcore
                         Description = "List all available skins",
                         DoubleDashes = new[] { "list-skin", "list-skins" },
                         SingleDash = new [] { "lskins", "lskin" }
-                    }
+                    },
+                    extendedImportInfo = new()
+                    {
+                        Name = "Extended import info",
+                        Description = "Show extended info about imported objects (skins/beatmaps)",
+                        DoubleDashes = new[] { "extended" },
+                        SingleDash = new[] { "ex" }
+                    },
+                    preserveImportedFiles = new()
+                    {
+                        Name = "Preserve imported files",
+                        Description = "Preserve imported beatmaps and skins files",
+                        DoubleDashes = new[] { "preserve" },
+                        SingleDash = new[] { "pr" }
+                    },
                 }
             };
 
@@ -270,6 +286,8 @@ namespace osu_replay_renderer_netcore
                 game = new OsuGameRecorder(orvConfig.GameSettings);
                 game.ModsOverride = modsOverride;
                 game.ExperimentalFlags = experimentalFlags;
+                game.PreserveImportedFiles = preserveImportedFiles.Triggered;
+                game.ExtendedImportInfo = extendedImportInfo.Triggered;
 
                 if (applySkin.Triggered)
                 {

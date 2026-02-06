@@ -24,6 +24,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using HarmonyLib;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu.Game.Configuration;
 using osu.Game.Rulesets.Mania.Configuration;
@@ -54,6 +55,9 @@ namespace osu_replay_renderer_netcore
         public string Skin { get; set; } = string.Empty;
 
         public string BeatmapPath { get; set; } = string.Empty;
+
+        public bool PreserveImportedFiles { get; set; } = true;
+        public bool ExtendedImportInfo { get; set; } = false;
         
         public bool HideOverlaysInPlayer = false;
         public bool SkipIntro = false;
@@ -79,42 +83,58 @@ namespace osu_replay_renderer_netcore
                 return null;
             }
 
-            if (!Directory.Exists(TempFolder))
+            var toImport = skinPath;
+            if (PreserveImportedFiles)
             {
-                Directory.CreateDirectory(TempFolder);
-            }
+                if (!Directory.Exists(TempFolder))
+                {
+                    Directory.CreateDirectory(TempFolder);
+                }
 
-            var tmpFile = Path.Combine(TempFolder, Path.GetFileName(skinPath));
-            if (File.Exists(tmpFile))
-            {
-                File.Delete(tmpFile);
+                var tmpFile = Path.Combine(TempFolder, Path.GetFileName(skinPath));
+                if (File.Exists(tmpFile))
+                {
+                    File.Delete(tmpFile);
+                }
+
+                try
+                {
+                    File.Copy(skinPath, tmpFile);
+                }
+                catch
+                {
+                    Console.Error.WriteLine("Cannot copy skin file to temp folder");
+                    Exit();
+                    return null;
+                }
+
+                toImport = tmpFile;
             }
 
             try
             {
-                File.Copy(skinPath, tmpFile);
-            }
-            catch
-            {
-                Console.Error.WriteLine("Cannot copy skin file to temp folder");
-                Exit();
-                return null;
-            }
-
-            try
-            {
-                var skin = SkinManager.Import(new ImportTask(null!, tmpFile)).GetAwaiter().GetResult();
+                var skin = SkinManager.Import(new ImportTask(null!, toImport)).GetAwaiter().GetResult();
                 skin.PerformRead(_ => { });
+
+                if (ExtendedImportInfo)
+                {
+                    Console.WriteLine($"IMPORTED_SKIN_ID::{skin.Value.ID}");
+                    Console.WriteLine($"IMPORTED_SKIN_NAME::{skin.Value.Name}");
+                }
+                
                 return skin;
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine("Cannot improt skin");
+                Console.Error.WriteLine("Cannot import skin");
                 Console.Error.WriteLine(e);
             }
             finally
             {
-                File.Delete(tmpFile);
+                if (File.Exists(toImport))
+                {
+                    File.Delete(toImport);
+                }
             }
             
             Exit();
@@ -129,33 +149,47 @@ namespace osu_replay_renderer_netcore
                 Exit();
                 return null;
             }
-            
-            if (!Directory.Exists(TempFolder))
-            {
-                Directory.CreateDirectory(TempFolder);
-            }
 
-            var tmpFile = Path.Combine(TempFolder, Path.GetFileName(beatmapSetPath));
-            if (File.Exists(tmpFile))
+            var toImport = beatmapSetPath;
+
+            if (PreserveImportedFiles)
             {
-                File.Delete(tmpFile);
+                if (!Directory.Exists(TempFolder))
+                {
+                    Directory.CreateDirectory(TempFolder);
+                }
+
+                var tmpFile = Path.Combine(TempFolder, Path.GetFileName(beatmapSetPath));
+                if (File.Exists(tmpFile))
+                {
+                    File.Delete(tmpFile);
+                }
+
+                try
+                {
+                    File.Copy(beatmapSetPath, tmpFile);
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine("Cannot copy beatmapset file to temp folder");
+                    Exit();
+                    return null;
+                }
             }
 
             try
             {
-                File.Copy(beatmapSetPath, tmpFile);
-            }
-            catch (Exception e)
-            {
-                Console.Error.WriteLine("Cannot copy beatmapset file to temp folder");
-                Exit();
-                return null;
-            }
-
-            try
-            {
-                var beatmap = BeatmapManager.Import(new ImportTask(null!, tmpFile)).GetAwaiter().GetResult();
+                var beatmap = BeatmapManager.Import(new ImportTask(null!, toImport)).GetAwaiter().GetResult();
                 beatmap.PerformRead(_ => { });
+
+                if (ExtendedImportInfo)
+                {
+                    Console.WriteLine($"IMPORTED_BEATMAPSET_ID::{beatmap.Value.ID}");
+                    Console.WriteLine($"IMPORTED_BEATMAPSET_ONLINE_ID::{beatmap.Value.OnlineID}");
+                    Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_IDS::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.ID))}");
+                    Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_HASHES::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.Hash))}");
+                    Console.WriteLine($"IMPORTED_BEATMAPSET_BEATMAP_ONLINE_IDS::{string.Join(',', beatmap.Value.Beatmaps.Select(x => x.OnlineID))}");
+                }
                 return beatmap;
             }
             catch (Exception e)
@@ -165,7 +199,10 @@ namespace osu_replay_renderer_netcore
             }
             finally
             {
-                File.Delete(tmpFile);
+                if (File.Exists(toImport))
+                {
+                    File.Delete(toImport);
+                }
             }
             
             Exit();
@@ -244,7 +281,8 @@ namespace osu_replay_renderer_netcore
 
                 foreach (SkinInfo info in realm.Run(r => r.All<SkinInfo>().Detach()))
                 {
-                    Console.WriteLine($"- '{info.Name}'");
+                    var extendedInfo = ExtendedImportInfo ? $", ID: '{info.ID}'" : "";
+                    Console.WriteLine($"- '{info.Name}'{extendedInfo}");
                 }
                 Console.WriteLine("--------------------");
                 Console.WriteLine();
@@ -318,7 +356,7 @@ namespace osu_replay_renderer_netcore
                         }
                         catch (LegacyScoreDecoder.BeatmapNotFoundException e)
                         {
-                            Console.Error.WriteLine("Beatmap not found while opening replay: " + e.Message);
+                            Console.Error.WriteLine("Beatmap not found");
                             Console.Error.WriteLine(
                                 "Please make sure the beatmap is imported in your osu!lazer installation");
                             score = null;
@@ -387,6 +425,47 @@ namespace osu_replay_renderer_netcore
             working.LoadTrack();
             Beatmap.Value = working;
             SelectedMods.Value = score.ScoreInfo.Mods;
+            
+            if (!string.IsNullOrEmpty(Skin))
+            {
+                Live<SkinInfo> skin;
+                switch (SkinActionType)
+                {
+                    case SkinAction.Import:
+                        skin = ImportSkin(Skin);
+                        break;
+                    case SkinAction.Select:
+                        skin = SkinManager.Query(c => c.Name == Skin);
+                        break;
+                    case SkinAction.Match:
+                        skin = SkinManager.Query(c => c.Name.Contains(Skin));
+                        break;
+                    case SkinAction.Id:
+                        skin = SkinManager.Query(c => c.ID == new Guid(Skin));
+                        break;
+                    case SkinAction.List:
+                        Debug.Assert(false);
+                        Exit();
+                        return;
+                    default:
+                        skin = null;
+                        break;
+                }
+
+                if (skin is null)
+                {
+                    Console.Error.WriteLine("Skin not found.");
+                    Exit();
+                    return;
+                }
+
+                SelectSkin(skin);
+                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapColours).Value = settings.BeatmapColors;
+                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapSkins).Value = settings.BeatmapSkin;
+                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapHitsounds).Value = settings.BeatmapHitsounds;
+                LocalConfig.GetBindable<bool>(OsuSetting.ShowStoryboard).Value = settings.ShowStoryboard;
+                LocalConfig.GetBindable<double>(OsuSetting.DimLevel).Value = settings.BackgroundDim;
+            }
 
             if (Host is ReplayRecordGameHost recordHost && recordHost.NeedAudio)
             {
@@ -416,33 +495,6 @@ namespace osu_replay_renderer_netcore
             {
                 (Host as ReplayRecordGameHost)?.AudioEnded();
             };
-
-            if (!string.IsNullOrEmpty(Skin))
-            {
-                Live<SkinInfo> skin;
-                if (SkinActionType == SkinAction.Import)
-                {
-                    skin = ImportSkin(Skin);
-                }
-                else
-                {
-                    skin = SkinManager.Query(c => c.Name == Skin);
-                }
-
-                if (skin is null)
-                {
-                    Console.Error.WriteLine("Skin not found.");
-                    Exit();
-                    return;
-                }
-
-                SelectSkin(skin);
-                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapColours).Value = settings.BeatmapColors;
-                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapSkins).Value = settings.BeatmapSkin;
-                LocalConfig.GetBindable<bool>(OsuSetting.BeatmapHitsounds).Value = settings.BeatmapHitsounds;
-                LocalConfig.GetBindable<bool>(OsuSetting.ShowStoryboard).Value = settings.ShowStoryboard;
-                LocalConfig.GetBindable<double>(OsuSetting.DimLevel).Value = settings.BackgroundDim;
-            }
             
             Console.WriteLine("Loading player");
             sw.Restart();
@@ -559,6 +611,8 @@ namespace osu_replay_renderer_netcore
     {
         Import,
         Select,
-        List
+        List,
+        Match,
+        Id
     }
 }
