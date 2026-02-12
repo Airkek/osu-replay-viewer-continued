@@ -38,7 +38,7 @@ namespace osu_replay_renderer_netcore.Audio
             for (int i = voices.Count - 1; i >= 0; i--)
             {
                 var voice = voices[i];
-                if (voice.Stopped)
+                if (voice is null || voice.Stopped)
                 {
                     voices.RemoveAt(i);
                     continue;
