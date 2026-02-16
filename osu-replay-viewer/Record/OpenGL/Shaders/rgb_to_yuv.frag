@@ -2,13 +2,14 @@
 precision highp float;
 
 uniform sampler2D uTexture;
-uniform vec2 uResolution; // Width, Height of the source image
+uniform int uResolution_w; // Width of the source image
+uniform int uResolution_h; // Height of the source image
 
 out float fragColor;
 
 void main() {
-    float H = uResolution.y;
-    float W = uResolution.x;
+    float H = (float)uResolution_h;
+    float W = (float)uResolution_w;
     
     // gl_FragCoord is in pixels, (0.5, 0.5) is bottom-left pixel center.
     float destX = gl_FragCoord.x - 0.5;

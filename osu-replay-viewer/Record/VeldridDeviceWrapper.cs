@@ -2,10 +2,12 @@
 using System.Drawing;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.Record;
+using osu_replay_renderer_netcore.Record.OpenGL;
 using osu.Framework.Graphics.Rendering;
 using osu.Framework.Platform;
 using Veldrid;
 using Veldrid.OpenGLBindings;
+using BufferTarget = Veldrid.OpenGLBindings.BufferTarget;
 
 namespace osu_replay_renderer_netcore.Record;
 
@@ -30,11 +32,8 @@ public class VeldridDeviceWrapper : RenderWrapper
 
     private readonly IGraphicsSurface graphicsSurface;
     private readonly GraphicsDevice Device;
-
-    private uint[] pboIds = new uint[2];
-    private int pboIndex = 0;
-    private bool pboInitialized = false;
-    private int pboSize = 0;
+    
+    private readonly OpenGLCapturer Capturer;
 
     public static bool IsSupported(IRenderer renderer)
     {
@@ -83,41 +82,12 @@ public class VeldridDeviceWrapper : RenderWrapper
             throw new NotSupportedException("graphicsSurface has unexpected type");
         }
         graphicsSurface = graphicsSurfaceObj as IGraphicsSurface;
-    }
-
-    private unsafe void InitializePBOs(int size)
-    {
-        if (pboInitialized && pboSize == size) return;
         
-        if (pboInitialized)
-        {
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[0]);
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[1]);
-        }
-
-        OpenGLNative.glGenBuffers(1, out pboIds[0]);
-        OpenGLNative.glGenBuffers(1, out pboIds[1]);
-
-        for (int i = 0; i < 2; i++)
-        {
-            OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[i]);
-            OpenGLNative.glBufferData(BufferTarget.PixelPackBuffer, (UIntPtr)size, IntPtr.Zero.ToPointer(), BufferUsageHint.StreamRead);
-        }
-        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-        pboInitialized = true;
-        pboSize = size;
+        Capturer = new OpenGLCapturer(new OsuTKOpenGLAdapter(), DesiredSize, PixelFormat);
     }
 
-    public ResourceFactory Factory
-        => Device.ResourceFactory;
-
-    public override unsafe void WriteFrame(EncoderBase encoder)
+    public override void WriteFrame(EncoderBase encoder)
     {
-        if (PixelFormat == PixelFormatMode.YUV420)
-        {
-            throw new NotImplementedException("YUV420 output is not supported with Veldrid renderer yet.");
-        }
-
         var texture = Device.SwapchainFramebuffer.ColorTargets[0].Target;
         
         var width = DesiredSize.Width;
@@ -132,48 +102,11 @@ public class VeldridDeviceWrapper : RenderWrapper
         {
             case GraphicsSurfaceType.OpenGL:
             {
-                var bufferSize = width * height * 3;
                 var info = Device.GetOpenGLInfo();
 
                 info.ExecuteOnGLThread(() =>
                 {
-                    InitializePBOs(bufferSize);
-                    
-                    int index = pboIndex % 2;
-                    int nextIndex = (pboIndex + 1) % 2;
-
-                    // Read pixels into current PBO
-                    OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
-                    OpenGLNative.glReadPixels(
-                        0, 0,
-                        texture.Width, texture.Height,
-                        GLPixelFormat.Rgb,
-                        GLPixelType.UnsignedByte,
-                        IntPtr.Zero.ToPointer());
-                    OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-
-                    // Process previous PBO
-                    if (pboIndex > 0)
-                    {
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
-                        var dataPtr = OpenGLNative.glMapBuffer(
-                            BufferTarget.PixelPackBuffer,
-                            BufferAccess.ReadOnly);
-
-                        if (dataPtr != IntPtr.Zero.ToPointer())
-                            try
-                            {
-                                var span = new ReadOnlySpan<byte>(dataPtr, bufferSize);
-                                encoder.WriteFrame(span);
-                            }
-                            finally
-                            {
-                                OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer);
-                            }
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-                    }
-                    
-                    pboIndex++;
+                    Capturer.WriteFrame(encoder);
                 });
                 break;
             }
@@ -185,39 +118,14 @@ public class VeldridDeviceWrapper : RenderWrapper
         }
     }
 
-    public override unsafe void Finish(EncoderBase encoder)
+    public override void Finish(EncoderBase encoder)
     {
         if (graphicsSurface.Type != GraphicsSurfaceType.OpenGL) return;
-        
         var info = Device.GetOpenGLInfo();
+
         info.ExecuteOnGLThread(() =>
         {
-             if (!pboInitialized) return;
-
-            // Process the last frame if any
-            if (pboIndex > 0)
-            {
-                int pendingIndex = (pboIndex - 1) % 2;
-                OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
-                var dataPtr = OpenGLNative.glMapBuffer(BufferTarget.PixelPackBuffer, BufferAccess.ReadOnly);
-                if (dataPtr != IntPtr.Zero.ToPointer())
-                {
-                    try
-                    {
-                        var span = new ReadOnlySpan<byte>(dataPtr, pboSize);
-                        encoder.WriteFrame(span);
-                    }
-                    finally
-                    {
-                        OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer);
-                    }
-                }
-                OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-            }
-            
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[0]);
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[1]);
-            pboInitialized = false;
+            Capturer.Finish(encoder);
         });
     }
 }

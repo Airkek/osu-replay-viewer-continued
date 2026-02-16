@@ -269,25 +269,18 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             if (type == GlRenderer.Auto)
             {
-                if (encoder.PixelFormat == PixelFormatMode.YUV420)
+                // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook 
+                switch (RuntimeInfo.OS)
                 {
-                    type = GlRenderer.Legacy;
-                }
-                else
-                {
-                    // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook 
-                    switch (RuntimeInfo.OS)
-                    {
-                        case RuntimeInfo.Platform.Windows:
-                            type = GlRenderer.Veldrid;
-                            break;
-                        case RuntimeInfo.Platform.Linux:
-                        case RuntimeInfo.Platform.macOS:
-                            type = GlRenderer.Legacy;
-                            break;
-                        default:
-                            throw new ArgumentOutOfRangeException();
-                    }
+                    case RuntimeInfo.Platform.Windows:
+                        type = GlRenderer.Veldrid;
+                        break;
+                    case RuntimeInfo.Platform.Linux:
+                    case RuntimeInfo.Platform.macOS:
+                        type = GlRenderer.Legacy;
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
                 }
             }
 
