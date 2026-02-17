@@ -8,6 +8,7 @@ namespace osu_replay_renderer_netcore.Audio
     public class StreamingAudioMixer
     {
         private readonly List<ActiveVoice> voices = new();
+        private readonly object voicesLock = new();
         public readonly AudioFormat Format;
 
         
@@ -26,7 +27,10 @@ namespace osu_replay_renderer_netcore.Audio
         public ActiveVoice AddVoice(AudioBuffer buffer)
         {
             var voice = new ActiveVoice { Buffer = buffer, Position = 0 };
-            voices.Add(voice);
+            lock (voicesLock)
+            {
+                voices.Add(voice);
+            }
             return voice;
         }
 
@@ -35,28 +39,29 @@ namespace osu_replay_renderer_netcore.Audio
             var mixBuffer = new float[sampleCount * Format.Channels];
             var destSpan = mixBuffer.AsSpan();
 
-            for (int i = voices.Count - 1; i >= 0; i--)
+            List<ActiveVoice> voicesToMix = new();
+            lock (voicesLock)
             {
-                var voice = voices[i];
-                if (voice is null || voice.Stopped)
+                for (var i = voices.Count - 1; i >= 0; i--)
                 {
-                    voices.RemoveAt(i);
-                    continue;
+                    var voice = voices[i];
+                    if (voice is null || voice.Stopped || voice.Position >= voice.Buffer.Samples)
+                    {
+                        voices.RemoveAt(i);
+                        continue;
+                    }
+                    voicesToMix.Add(voice);
                 }
+            }
 
+            foreach (var voice in voicesToMix)
+            {
                 // Calculate how many samples we can take from this voice
                 // We need to account for resampling if rates differ
                 double rateRatio = voice.Buffer.Format.SampleRate / (double)Format.SampleRate;
                 
                 // How many output samples we need: sampleCount
                 // How many input samples that corresponds to: sampleCount * rateRatio
-                
-                // Check if voice is finished
-                if (voice.Position >= voice.Buffer.Samples)
-                {
-                    voices.RemoveAt(i);
-                    continue;
-                }
 
                 if (Math.Abs(rateRatio - 1.0) < double.Epsilon && voice.Buffer.Format.Channels == Format.Channels)
                 {
