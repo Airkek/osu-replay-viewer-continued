@@ -269,7 +269,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             if (type == GlRenderer.Auto)
             {
-                if (encoder.PixelFormat == PixelFormatMode.YUV420)
+                if (encoder.PixelFormat != PixelFormatMode.RGB)
                 {
                     type = GlRenderer.Legacy;
                 }
