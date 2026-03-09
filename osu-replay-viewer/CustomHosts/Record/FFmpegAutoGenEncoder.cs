@@ -34,7 +34,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 int bufferSize = Config.Resolution.Width * Config.Resolution.Height * 3;
                 _pixelBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
             }
-            
+
             ffmpeg.avformat_network_init();
 
             // Allocate output format context
@@ -62,16 +62,28 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             _codecContext->height = Config.Resolution.Height;
             _codecContext->time_base = new AVRational { num = 1, den = Config.FPS };
             _codecContext->framerate = new AVRational { num = Config.FPS, den = 1 };
-            _codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_YUV420P;
+            _codecContext->pix_fmt = GetAVPixelFormat(Config.PixelFormat);
             _codecContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
 
-            if (Config.PixelFormat == PixelFormatMode.YUV420)
+            // Set color metadata for YUV formats
+            if (Config.PixelFormat != PixelFormatMode.RGB)
             {
-                _codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT709;
-                _codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT709;
-                _codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_BT709;
+                if (Config.ColorSpace == ColorSpaceMode.BT601)
+                {
+                    _codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT470BG;
+                    _codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT470BG;
+                    _codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_GAMMA22;
+                }
+                else // BT709
+                {
+                    _codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT709;
+                    _codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT709;
+                    _codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_BT709;
+                }
                 _codecContext->color_range = AVColorRange.AVCOL_RANGE_JPEG;
             }
+
+            Console.WriteLine($"[FFmpegAutoGenEncoder] Pixel format: {Config.PixelFormat} -> {_codecContext->pix_fmt}, Color space: {Config.ColorSpace}");
 
             // Set encoder options
             var dict = new Dictionary<string, string>();
@@ -128,6 +140,14 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             ffmpeg.avformat_write_header(_formatContext, null);
         }
 
+        private AVPixelFormat GetAVPixelFormat(PixelFormatMode mode) => mode switch
+        {
+            PixelFormatMode.YUV420 => AVPixelFormat.AV_PIX_FMT_YUV420P,
+            PixelFormatMode.YUV444 => AVPixelFormat.AV_PIX_FMT_YUV444P,
+            PixelFormatMode.NV12 => AVPixelFormat.AV_PIX_FMT_NV12,
+            _ => AVPixelFormat.AV_PIX_FMT_YUV420P
+        };
+
         protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
         {
             fixed (byte* framePtr = frame)
@@ -139,7 +159,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                         // For some reason sws_scale crashes with ACCESS_VIOLATION when passing mapped PBO pointer :(
                         // TODO: find a way to avoid copying this shit
                         Buffer.MemoryCopy(framePtr, srcPtr, _pixelBuffer.Length, frame.Length);
-                        
+
                         int srcStride = Config.Resolution.Width * 3;
                         byte*[] srcData = { srcPtr + (Config.Resolution.Height - 1) * srcStride, null, null, null };
                         int[] srcStrideArray = { -srcStride, 0, 0, 0 };
@@ -149,41 +169,20 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                             _frame->data, _frame->linesize);
                     }
                 }
-                else
+                else if (Config.PixelFormat == PixelFormatMode.YUV420)
                 {
                     // YUV420P input (already flipped by shader)
-                    byte* srcPtr = framePtr;
-                    int width = Config.Resolution.Width;
-                    int height = Config.Resolution.Height;
-                    int ySize = width * height;
-                    int uvSize = width * height / 4;
-
-                    // Y Plane
-                    byte* ySrc = srcPtr;
-                    byte* yDst = _frame->data[0];
-                    int yStride = _frame->linesize[0];
-                    for (int i = 0; i < height; i++)
-                    {
-                        Buffer.MemoryCopy(ySrc + i * width, yDst + i * yStride, yStride, width);
-                    }
-
-                    // U Plane
-                    byte* uSrc = srcPtr + ySize;
-                    byte* uDst = _frame->data[1];
-                    int uStride = _frame->linesize[1];
-                    for (int i = 0; i < height / 2; i++)
-                    {
-                        Buffer.MemoryCopy(uSrc + i * (width / 2), uDst + i * uStride, uStride, width / 2);
-                    }
-
-                    // V Plane
-                    byte* vSrc = srcPtr + ySize + uvSize;
-                    byte* vDst = _frame->data[2];
-                    int vStride = _frame->linesize[2];
-                    for (int i = 0; i < height / 2; i++)
-                    {
-                        Buffer.MemoryCopy(vSrc + i * (width / 2), vDst + i * vStride, vStride, width / 2);
-                    }
+                    CopyYUV420P(framePtr);
+                }
+                else if (Config.PixelFormat == PixelFormatMode.YUV444)
+                {
+                    // YUV444P input
+                    CopyYUV444P(framePtr);
+                }
+                else if (Config.PixelFormat == PixelFormatMode.NV12)
+                {
+                    // NV12 input
+                    CopyNV12(framePtr);
                 }
 
                 _frame->pts = _pts++;
@@ -215,6 +214,101 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 {
                     ffmpeg.av_packet_free(&packet);
                 }
+            }
+        }
+
+        private void CopyYUV420P(byte* srcPtr)
+        {
+            int width = Config.Resolution.Width;
+            int height = Config.Resolution.Height;
+            int ySize = width * height;
+            int uvSize = width * height / 4;
+
+            // Y Plane
+            byte* ySrc = srcPtr;
+            byte* yDst = _frame->data[0];
+            int yStride = _frame->linesize[0];
+            for (int i = 0; i < height; i++)
+            {
+                Buffer.MemoryCopy(ySrc + i * width, yDst + i * yStride, yStride, width);
+            }
+
+            // U Plane
+            byte* uSrc = srcPtr + ySize;
+            byte* uDst = _frame->data[1];
+            int uStride = _frame->linesize[1];
+            for (int i = 0; i < height / 2; i++)
+            {
+                Buffer.MemoryCopy(uSrc + i * (width / 2), uDst + i * uStride, uStride, width / 2);
+            }
+
+            // V Plane
+            byte* vSrc = srcPtr + ySize + uvSize;
+            byte* vDst = _frame->data[2];
+            int vStride = _frame->linesize[2];
+            for (int i = 0; i < height / 2; i++)
+            {
+                Buffer.MemoryCopy(vSrc + i * (width / 2), vDst + i * vStride, vStride, width / 2);
+            }
+        }
+
+        private void CopyYUV444P(byte* srcPtr)
+        {
+            int width = Config.Resolution.Width;
+            int height = Config.Resolution.Height;
+            int planeSize = width * height;
+
+            // Y Plane
+            byte* ySrc = srcPtr;
+            byte* yDst = _frame->data[0];
+            int yStride = _frame->linesize[0];
+            for (int i = 0; i < height; i++)
+            {
+                Buffer.MemoryCopy(ySrc + i * width, yDst + i * yStride, yStride, width);
+            }
+
+            // U Plane
+            byte* uSrc = srcPtr + planeSize;
+            byte* uDst = _frame->data[1];
+            int uStride = _frame->linesize[1];
+            for (int i = 0; i < height; i++)
+            {
+                Buffer.MemoryCopy(uSrc + i * width, uDst + i * uStride, uStride, width);
+            }
+
+            // V Plane
+            byte* vSrc = srcPtr + planeSize * 2;
+            byte* vDst = _frame->data[2];
+            int vStride = _frame->linesize[2];
+            for (int i = 0; i < height; i++)
+            {
+                Buffer.MemoryCopy(vSrc + i * width, vDst + i * vStride, vStride, width);
+            }
+        }
+
+        private void CopyNV12(byte* srcPtr)
+        {
+            int width = Config.Resolution.Width;
+            int height = Config.Resolution.Height;
+            int ySize = width * height;
+            int uvSize = width * height / 2; // Interleaved UV
+
+            // Y Plane
+            byte* ySrc = srcPtr;
+            byte* yDst = _frame->data[0];
+            int yStride = _frame->linesize[0];
+            for (int i = 0; i < height; i++)
+            {
+                Buffer.MemoryCopy(ySrc + i * width, yDst + i * yStride, yStride, width);
+            }
+
+            // UV Plane (interleaved)
+            byte* uvSrc = srcPtr + ySize;
+            byte* uvDst = _frame->data[1];
+            int uvStride = _frame->linesize[1];
+            for (int i = 0; i < height / 2; i++)
+            {
+                Buffer.MemoryCopy(uvSrc + i * width, uvDst + i * uvStride, uvStride, width);
             }
         }
 

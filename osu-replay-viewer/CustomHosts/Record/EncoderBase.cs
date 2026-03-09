@@ -6,7 +6,15 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record;
 public enum PixelFormatMode
 {
     RGB,
-    YUV420
+    YUV420,
+    YUV444,
+    NV12
+}
+
+public enum ColorSpaceMode
+{
+    BT601,
+    BT709
 }
 
 public struct EncoderConfig
@@ -20,6 +28,7 @@ public struct EncoderConfig
     public string FFmpegPath;
     public string FFmpegExec;
     public PixelFormatMode PixelFormat;
+    public ColorSpaceMode ColorSpace;
 }
 
 public abstract class EncoderBase

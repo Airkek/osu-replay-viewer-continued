@@ -41,7 +41,7 @@ public class VeldridDeviceWrapper : RenderWrapper
         return renderer.GetType() == VeldridRendererType || renderer.GetType() == DeferredRendererType;
     }
 
-    public VeldridDeviceWrapper(IRenderer renderer, Size desiredSize, PixelFormatMode pixelFormat) : base(desiredSize, pixelFormat)
+    public VeldridDeviceWrapper(IRenderer renderer, Size desiredSize, PixelFormatMode pixelFormat, ColorSpaceMode colorSpace) : base(desiredSize, pixelFormat, colorSpace)
     {
         object veldridDevice;
         if (renderer.GetType() == VeldridRendererType)
