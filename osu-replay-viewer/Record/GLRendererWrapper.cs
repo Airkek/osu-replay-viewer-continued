@@ -65,13 +65,44 @@ public class GLRendererWrapper : RenderWrapper
         }
     }
 
+    private (int bufferSize, int fboHeight) GetBufferSizeAndHeight()
+    {
+        return PixelFormat switch
+        {
+            PixelFormatMode.YUV444 => (DesiredSize.Width * DesiredSize.Height * 3, DesiredSize.Height * 3),
+            PixelFormatMode.NV12 => (DesiredSize.Width * DesiredSize.Height * 3 / 2, DesiredSize.Height * 3 / 2),
+            _ => (DesiredSize.Width * DesiredSize.Height * 3 / 2, DesiredSize.Height * 3 / 2) // YUV420
+        };
+    }
+
+    private int GetPixelFormatUniform()
+    {
+        return PixelFormat switch
+        {
+            PixelFormatMode.YUV444 => 1,
+            PixelFormatMode.NV12 => 2,
+            _ => 0 // YUV420
+        };
+    }
+
+    private int GetColorSpaceUniform()
+    {
+        return ColorSpace switch
+        {
+            ColorSpaceMode.BT601 => 0,
+            _ => 1 // BT709
+        };
+    }
+
     private void InitializeResources()
     {
         if (resourcesInitialized) return;
 
+        var (bufferSize, fboHeight) = GetBufferSizeAndHeight();
+
         var basePath = AppDomain.CurrentDomain.BaseDirectory;
-        string vertexShaderSource = File.ReadAllText(Path.Combine(basePath, "Record", "Shaders", "rgb_to_yuv.vert"));
-        string fragmentShaderSource = File.ReadAllText(Path.Combine(basePath, "Record", "Shaders", "rgb_to_yuv.frag"));
+        string vertexShaderSource = File.ReadAllText(Path.Combine(basePath, "Record", "Shaders", "yuv_converter.vert"));
+        string fragmentShaderSource = File.ReadAllText(Path.Combine(basePath, "Record", "Shaders", "yuv_converter.frag"));
 
         int vertexShader = GL.CreateShader(ShaderType.VertexShader);
         GL.ShaderSource(vertexShader, vertexShaderSource);
@@ -87,9 +118,11 @@ public class GLRendererWrapper : RenderWrapper
         GL.AttachShader(shaderProgram, vertexShader);
         GL.AttachShader(shaderProgram, fragmentShader);
         GL.LinkProgram(shaderProgram);
-        
+
         GL.DeleteShader(vertexShader);
         GL.DeleteShader(fragmentShader);
+
+        Console.WriteLine($"[GLRendererWrapper] Shader loaded for pixel format: {PixelFormat}, color space: {ColorSpace}");
 
         // Source Texture
         sourceTexture = GL.GenTexture();
@@ -102,7 +135,7 @@ public class GLRendererWrapper : RenderWrapper
         yuvTexture = GL.GenTexture();
         GL.BindTexture(TextureTarget.Texture2D, yuvTexture);
         // GL_R8 = 0x8229
-        GL.TexImage2D((All)TextureTarget.Texture2D, 0, (All)0x8229, DesiredSize.Width, DesiredSize.Height * 3 / 2, 0, (All)osuTK.Graphics.ES30.PixelFormat.Red, (All)PixelType.UnsignedByte, IntPtr.Zero);
+        GL.TexImage2D((All)TextureTarget.Texture2D, 0, (All)0x8229, DesiredSize.Width, fboHeight, 0, (All)osuTK.Graphics.ES30.PixelFormat.Red, (All)PixelType.UnsignedByte, IntPtr.Zero);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
 
@@ -144,13 +177,13 @@ public class GLRendererWrapper : RenderWrapper
             throw new Exception($"Shader compilation failed: {infoLog}");
         }
     }
-    
+
     public static bool IsSupported(IRenderer renderer)
     {
         return renderer.GetType() == GLRendererType;
     }
 
-    public GLRendererWrapper(IRenderer renderer, Size desiredSize, PixelFormatMode pixelFormat) : base(desiredSize, pixelFormat)
+    public GLRendererWrapper(IRenderer renderer, Size desiredSize, PixelFormatMode pixelFormat, ColorSpaceMode colorSpace) : base(desiredSize, pixelFormat, colorSpace)
     {
         if (renderer.GetType() != GLRendererType)
             throw new ArgumentException($"Not supported renderer: {renderer.GetType()}");
@@ -162,6 +195,8 @@ public class GLRendererWrapper : RenderWrapper
 
         surface = (IGraphicsSurface)graphicsSurfaceObj;
         openGLSurface = (IOpenGLGraphicsSurface)graphicsSurfaceObj;
+
+        Console.WriteLine($"[GLRendererWrapper] Initialized with pixel format: {pixelFormat}, color space: {colorSpace}");
     }
 
     public override void WriteFrame(EncoderBase encoder)
@@ -186,6 +221,8 @@ public class GLRendererWrapper : RenderWrapper
     {
         InitializeResources();
 
+        var (bufferSize, fboHeight) = GetBufferSizeAndHeight();
+
         // Save state
         GL.GetInteger(GetPName.DrawFramebufferBinding, out int oldFbo);
         GL.GetInteger(GetPName.TextureBinding2D, out int oldTexture);
@@ -193,7 +230,7 @@ public class GLRendererWrapper : RenderWrapper
         GL.GetInteger(GetPName.ActiveTexture, out int oldActiveTexture);
         int[] oldViewport = new int[4];
         GL.GetInteger(GetPName.Viewport, oldViewport);
-        
+
         bool scissorEnabled = GL.IsEnabled(EnableCap.ScissorTest);
         bool blendEnabled = GL.IsEnabled(EnableCap.Blend);
         bool depthTestEnabled = GL.IsEnabled(EnableCap.DepthTest);
@@ -202,25 +239,25 @@ public class GLRendererWrapper : RenderWrapper
         // 1. Copy current framebuffer to sourceTexture
         GL.ActiveTexture(TextureUnit.Texture0);
         GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
-        
+
         // Ensure no error before we start
         while (GL.GetError() != ErrorCode.NoError) {}
 
         GL.CopyTexSubImage2D((All)TextureTarget.Texture2D, 0, 0, 0, 0, 0, DesiredSize.Width, DesiredSize.Height);
-        
+
         var err = GL.GetError();
         if (err != ErrorCode.NoError) Console.WriteLine($"GL Error after CopyTexSubImage2D: {err}");
 
         // 2. Render to YUV FBO
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, yuvFbo);
-        
+
         if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete)
         {
              Console.WriteLine($"Framebuffer incomplete: {GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)}");
         }
-        
-        GL.Viewport(0, 0, DesiredSize.Width, DesiredSize.Height * 3 / 2);
-        
+
+        GL.Viewport(0, 0, DesiredSize.Width, fboHeight);
+
         GL.Disable(EnableCap.ScissorTest);
         GL.Disable(EnableCap.Blend);
         GL.Disable(EnableCap.DepthTest);
@@ -233,12 +270,13 @@ public class GLRendererWrapper : RenderWrapper
         GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
         GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uTexture"), 0);
         GL.Uniform2(GL.GetUniformLocation(shaderProgram, "uResolution"), (float)DesiredSize.Width, (float)DesiredSize.Height);
+        GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uPixelFormat"), GetPixelFormatUniform());
+        GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uColorSpace"), GetColorSpaceUniform());
 
         GL.BindVertexArray(vao);
         GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
 
         // 3. ReadPixels
-        var bufferSize = DesiredSize.Width * (DesiredSize.Height * 3 / 2);
         InitializePBOs(bufferSize);
 
         int index = pboIndex % 2;
@@ -246,7 +284,7 @@ public class GLRendererWrapper : RenderWrapper
 
         GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
         GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
-        GL.ReadPixels(0, 0, DesiredSize.Width, DesiredSize.Height * 3 / 2, osuTK.Graphics.ES30.PixelFormat.Red, PixelType.UnsignedByte, IntPtr.Zero);
+        GL.ReadPixels(0, 0, DesiredSize.Width, fboHeight, osuTK.Graphics.ES30.PixelFormat.Red, PixelType.UnsignedByte, IntPtr.Zero);
         GL.PixelStore(PixelStoreParameter.PackAlignment, 4); // Restore default
         GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
 
@@ -269,7 +307,7 @@ public class GLRendererWrapper : RenderWrapper
             }
             GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
         }
-        
+
         pboIndex++;
 
         // Restore state
@@ -278,7 +316,7 @@ public class GLRendererWrapper : RenderWrapper
         GL.BindTexture(TextureTarget.Texture2D, oldTexture);
         GL.UseProgram(oldProgram);
         if (oldViewport != null && oldViewport.Length == 4) GL.Viewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
-        
+
         if (scissorEnabled) GL.Enable(EnableCap.ScissorTest);
         if (blendEnabled) GL.Enable(EnableCap.Blend);
         if (depthTestEnabled) GL.Enable(EnableCap.DepthTest);
@@ -331,7 +369,7 @@ public class GLRendererWrapper : RenderWrapper
     private void InitializePBOs(int size)
     {
         if (pboInitialized && pboSize == size) return;
-        
+
         if (pboInitialized)
         {
             GL.DeleteBuffers(2, pboIds);
@@ -374,7 +412,7 @@ public class GLRendererWrapper : RenderWrapper
                 }
                 GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
             }
-            
+
             GL.DeleteBuffers(2, pboIds);
             pboInitialized = false;
         });

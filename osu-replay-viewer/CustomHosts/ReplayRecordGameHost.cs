@@ -310,7 +310,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
 
             SetupRendererAndWindow(rendererStr, GraphicsSurfaceType.OpenGL);
-            wrapper = CreateWrapper(Renderer, encoder.Config.Resolution, encoder.Config.PixelFormat);
+            wrapper = CreateWrapper(Renderer, encoder.Config.Resolution, encoder.Config.PixelFormat, encoder.Config.ColorSpace);
             if (wrapper is null)
             {
                 Console.Error.WriteLine($"Cannot create wrapper for renderer: {Renderer.GetType()}");
@@ -320,18 +320,18 @@ namespace osu_replay_renderer_netcore.CustomHosts
             Console.WriteLine($"Created '{type}' renderer. Type: {Renderer.GetType()}, wrapper: {wrapper.GetType()}");
         }
 
-        private static RenderWrapper CreateWrapper(IRenderer renderer, Size size, PixelFormatMode pixelFormat)
+        private static RenderWrapper CreateWrapper(IRenderer renderer, Size size, PixelFormatMode pixelFormat, ColorSpaceMode colorSpace)
         {
             if (VeldridDeviceWrapper.IsSupported(renderer))
             {
-                return new VeldridDeviceWrapper(renderer, size, pixelFormat);
+                return new VeldridDeviceWrapper(renderer, size, pixelFormat, colorSpace);
             }
 
             if (GLRendererWrapper.IsSupported(renderer))
             {
-                return new GLRendererWrapper(renderer, size, pixelFormat);
+                return new GLRendererWrapper(renderer, size, pixelFormat, colorSpace);
             }
-            
+
             Console.WriteLine($"Unknown renderer: {renderer.GetType()}");
             throw new NotImplementedException($"Unknown renderer: {renderer.GetType()}");
         }

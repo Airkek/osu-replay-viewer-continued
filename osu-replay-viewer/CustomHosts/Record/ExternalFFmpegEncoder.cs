@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 
@@ -12,16 +12,30 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         {
             get
             {
-                string pixFmt = "rgb24";
-                string filters = "-vf \"vflip\"";
-                
-                string colorFlags = "";
-                if (Config.PixelFormat == PixelFormatMode.YUV420)
+                string pixFmt = Config.PixelFormat switch
                 {
-                    pixFmt = "yuv420p";
-                    filters = ""; // Shader handles flip
-                    colorFlags = "-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range pc";
-                }
+                    PixelFormatMode.YUV420 => "yuv420p",
+                    PixelFormatMode.YUV444 => "yuv444p",
+                    PixelFormatMode.NV12 => "nv12",
+                    _ => "rgb24"
+                };
+
+                string filters = Config.PixelFormat == PixelFormatMode.RGB ? "-vf \"vflip\"" : "";
+
+                string colorFlags = Config.PixelFormat != PixelFormatMode.RGB ? Config.ColorSpace switch
+                {
+                    ColorSpaceMode.BT601 => "-colorspace bt470bg -color_primaries bt470bg -color_trc gamma22 -color_range pc",
+                    ColorSpaceMode.BT709 => "-colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range pc",
+                    _ => ""
+                } : "";
+
+                string outputPixFmt = Config.PixelFormat switch
+                {
+                    PixelFormatMode.YUV420 => "yuv420p",
+                    PixelFormatMode.YUV444 => "yuv444p",
+                    PixelFormatMode.NV12 => "nv12",
+                    _ => "yuv420p" // RGB input gets converted to yuv420p by FFmpeg
+                };
 
                 var inputParameters = $"-y -f rawvideo -pix_fmt {pixFmt} -s {Config.Resolution.Width}x{Config.Resolution.Height} -r {Config.FPS} -i pipe:";
 
@@ -40,14 +54,14 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                         encoderSpecific = "-crf 21";
                         break;
                 }
-                
-                var outputParameters = $"-c:v {Config.Encoder} {filters} {encoderSpecific} {colorFlags} -pix_fmt yuv420p -preset {Config.Preset} {Config.OutputPath}";
+
+                var outputParameters = $"-c:v {Config.Encoder} {filters} {encoderSpecific} {colorFlags} -pix_fmt {outputPixFmt} -preset {Config.Preset} {Config.OutputPath}";
                 return inputParameters + (string.IsNullOrWhiteSpace(inputEffect)? (" " + inputEffect) : "") + " " + outputParameters;
             }
         }
 
         public override bool CanWrite => InputStream is not null && InputStream.CanWrite;
-        
+
         public ExternalFFmpegEncoder(EncoderConfig config) : base(config) { }
 
         protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)

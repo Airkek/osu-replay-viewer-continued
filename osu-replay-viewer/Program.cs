@@ -256,11 +256,14 @@ namespace osu_replay_renderer_netcore
                         Preset = orvConfig.FFmpegOptions.VideoEncoderPreset,
                         Encoder = orvConfig.FFmpegOptions.VideoEncoder,
                         Bitrate = orvConfig.FFmpegOptions.VideoEncoderBitrate,
-                        
+
                         // External only
                         FFmpegExec = orvConfig.FFmpegOptions.Executable,
                         PixelFormat = orvConfig.OutputOptions.PixelFormat,
+                        ColorSpace = orvConfig.OutputOptions.ColorSpace,
                     };
+
+                    Console.WriteLine($"[Encoder] Pixel format: {config.PixelFormat}, Color space: {config.ColorSpace}");
                     
                     FFmpegAudioTools.FFmpegExec = orvConfig.FFmpegOptions.Executable;
 

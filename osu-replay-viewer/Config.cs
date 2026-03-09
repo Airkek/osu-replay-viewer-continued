@@ -52,6 +52,7 @@ public class Config
     public class OutputOptionsObject
     {
         [JsonProperty("pixel_format")] public PixelFormatMode PixelFormat = PixelFormatMode.RGB;
+        [JsonProperty("yuv_color_space")] public ColorSpaceMode ColorSpace = ColorSpaceMode.BT709;
     }
     [JsonProperty("output_options")] public OutputOptionsObject OutputOptions = new();
 
