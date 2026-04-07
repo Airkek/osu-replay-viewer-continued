@@ -17,9 +17,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
-using osu.Game.Rulesets.Osu.UI;
-using osu.Game.Rulesets.Osu.UI.Cursor;
-using osu.Game.Skinning;
 
 namespace osu_replay_renderer_netcore
 {
@@ -72,7 +69,7 @@ namespace osu_replay_renderer_netcore
 
             if (HideOverlays)
             {
-                HUDOverlay.RemoveRecursive(v => v == HUDOverlay.PlayerSettingsOverlay);
+                ReplayOverlay.Hide();
                 GameplayClockContainer.RemoveRecursive(v => v is SkipOverlay);
             }
 
