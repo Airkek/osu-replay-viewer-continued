@@ -274,7 +274,7 @@ namespace osu_replay_renderer_netcore
 
                     EncoderBase encoder;
 
-                    if (ShouldUseNvidiaGpuEncoder(config))
+                    if (ShouldUseNvidiaGpuEncoder(orvConfig, config))
                     {
                         if (config.PixelFormat != PixelFormatMode.NV12)
                         {
