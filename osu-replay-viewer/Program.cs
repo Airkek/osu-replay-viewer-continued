@@ -272,12 +272,27 @@ namespace osu_replay_renderer_netcore
                         config.FFmpegPath = orvConfig.FFmpegOptions.LibrariesPath;
                     }
 
-                    EncoderBase encoder = orvConfig.FFmpegOptions.Mode switch
+                    EncoderBase encoder;
+
+                    if (ShouldUseNvidiaGpuEncoder(config))
                     {
-                        FFmpegMode.Pipe => new ExternalFFmpegEncoder(config),
-                        FFmpegMode.Binding => new FFmpegAutoGenEncoder(config),
-                        _ => throw new ArgumentOutOfRangeException("FFmpeg mode")
-                    };
+                        if (config.PixelFormat != PixelFormatMode.NV12)
+                        {
+                            Console.WriteLine("[Encoder] NVIDIA GPU path requires NV12. Overriding output pixel format to NV12.");
+                            config.PixelFormat = PixelFormatMode.NV12;
+                        }
+
+                        encoder = new NvidiaGpuFFmpegEncoder(config);
+                    }
+                    else
+                    {
+                        encoder = orvConfig.FFmpegOptions.Mode switch
+                        {
+                            FFmpegMode.Pipe => new ExternalFFmpegEncoder(config),
+                            FFmpegMode.Binding => new FFmpegAutoGenEncoder(config),
+                            _ => throw new ArgumentOutOfRangeException("FFmpeg mode")
+                        };
+                    }
 
                     host = new ReplayRecordGameHost(gameName, encoder, recordClock, orvConfig.RecordOptions.Renderer, patched, orvConfig.GameSettings);
                 }
@@ -440,6 +455,20 @@ namespace osu_replay_renderer_netcore
         private static bool ShouldApplyPatch(string[] args)
         {
             return CanApplyPatch() && args.Any(arg => arg.Equals("--record") || arg.Equals("-R"));
+        }
+
+        private static bool ShouldUseNvidiaGpuEncoder(Config config, EncoderConfig encoderConfig)
+        {
+            if (config.FFmpegOptions.Mode != FFmpegMode.Binding)
+                return false;
+
+            if (!config.FFmpegOptions.UseCudaIfPossible)
+                return false;
+            
+            if (!NvidiaGpuFFmpegEncoder.IsSupportedConfig(encoderConfig))
+                return false;
+
+            return true;
         }
     }
 }

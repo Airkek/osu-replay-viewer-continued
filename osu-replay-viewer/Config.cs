@@ -45,6 +45,7 @@ public class Config
         [JsonProperty("video_encoder")] public string VideoEncoder = "libx264";
         [JsonProperty("video_encoder_preset")] public string VideoEncoderPreset = "slow";
         [JsonProperty("video_encoder_bitrate")] public string VideoEncoderBitrate = "100M";
+        [JsonProperty("use_cuda_if_possible")] public bool UseCudaIfPossible = true;
         
     }
     [JsonProperty("ffmpeg_options")] public FFmpegOptionsObject FFmpegOptions = new();

@@ -276,6 +276,14 @@ public class GLRendererWrapper : RenderWrapper
         GL.BindVertexArray(vao);
         GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
 
+        if (encoder is IOpenGLTextureEncoder textureEncoder && textureEncoder.AcceptsOpenGLTexture(PixelFormat))
+        {
+            GL.Flush();
+            textureEncoder.WriteOpenGLTexture(yuvTexture, DesiredSize.Width, fboHeight, PixelFormat);
+            RestoreState(oldFbo, oldTexture, oldProgram, oldActiveTexture, oldViewport, scissorEnabled, blendEnabled, depthTestEnabled, cullFaceEnabled);
+            return;
+        }
+
         // 3. ReadPixels
         InitializePBOs(bufferSize);
 
@@ -310,7 +318,11 @@ public class GLRendererWrapper : RenderWrapper
 
         pboIndex++;
 
-        // Restore state
+        RestoreState(oldFbo, oldTexture, oldProgram, oldActiveTexture, oldViewport, scissorEnabled, blendEnabled, depthTestEnabled, cullFaceEnabled);
+    }
+
+    private void RestoreState(int oldFbo, int oldTexture, int oldProgram, int oldActiveTexture, int[] oldViewport, bool scissorEnabled, bool blendEnabled, bool depthTestEnabled, bool cullFaceEnabled)
+    {
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, oldFbo);
         GL.ActiveTexture((TextureUnit)oldActiveTexture);
         GL.BindTexture(TextureTarget.Texture2D, oldTexture);

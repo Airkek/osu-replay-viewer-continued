@@ -267,6 +267,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
         {
             var type = rendererType;
 
+            if (encoder is IOpenGLTextureEncoder && type != GlRenderer.Legacy)
+            {
+                Console.WriteLine("[Renderer] NVIDIA GPU encoder requires legacy OpenGL renderer; switching renderer to Legacy.");
+                type = GlRenderer.Legacy;
+            }
+
             if (type == GlRenderer.Auto)
             {
                 if (encoder.PixelFormat != PixelFormatMode.RGB)
