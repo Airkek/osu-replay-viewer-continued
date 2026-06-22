@@ -69,7 +69,7 @@ namespace osu_replay_renderer_netcore
 
             if (HideOverlays)
             {
-                HUDOverlay.PlayerSettingsOverlay.Hide();
+                ReplayOverlay.Hide();
                 GameplayClockContainer.RemoveRecursive(v => v is SkipOverlay);
             }
 

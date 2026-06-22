@@ -26,6 +26,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
+using osu.Framework.Platform;
 using osu.Game.Configuration;
 using osu.Game.Rulesets.Mania.Configuration;
 using osu.Game.Rulesets.Osu.Configuration;
@@ -175,6 +176,8 @@ namespace osu_replay_renderer_netcore
                     Exit();
                     return null;
                 }
+                
+                toImport = tmpFile;
             }
 
             try
@@ -404,6 +407,7 @@ namespace osu_replay_renderer_netcore
             else
             {
                 config.SetValue(FrameworkSetting.FrameSync, FrameSync.Unlimited);
+                config.SetValue(FrameworkSetting.ExecutionMode, ExecutionMode.SingleThread);
             }
             
             config.SetValue(FrameworkSetting.VolumeMusic, settings.VolumeMusic);
