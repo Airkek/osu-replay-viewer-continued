@@ -9,7 +9,7 @@ jobs:
   build:
     strategy:
       matrix:
-        runtime: [win-x64, win-arm64, linux-x64, linux-arm64, osx-x64, osx-arm64]
+        runtime: [win-x64, linux-x64]
         config: [Debug, Release]
     runs-on: ubuntu-latest
     steps:
@@ -29,7 +29,7 @@ jobs:
 
       - name: Archive Release
         run: |
-          if [[ "${{ matrix.runtime }}" == *win-* || "${{ matrix.runtime }}" == *osx-* ]]; then
+          if [[ "${{ matrix.runtime }}" == *win-* ]]; then
             cd publish && zip -r "../app-${{ matrix.config }}-${{ matrix.runtime }}.zip" .
           else
             tar -czf "app-${{ matrix.config }}-${{ matrix.runtime }}.tar.gz" -C publish .
