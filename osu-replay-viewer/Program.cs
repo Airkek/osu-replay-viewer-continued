@@ -23,6 +23,12 @@ namespace osu_replay_renderer_netcore
         
         static void Main(string[] args)
         {
+            if (RealmLookup.TryHandleCommand(args, out int realmLookupExitCode))
+            {
+                Environment.ExitCode = realmLookupExitCode;
+                return;
+            }
+
             // Command tree
             OptionDescription alwaysYes;
             OptionDescription modOverride;

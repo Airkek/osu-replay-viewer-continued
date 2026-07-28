@@ -528,7 +528,7 @@ namespace osu_replay_renderer_netcore
                 osuMgr.SetValue(OsuRulesetSetting.ReplayClickMarkersEnabled, false);
             } else if (configMgr is ManiaRulesetConfigManager maniaMgr)
             {
-                maniaMgr.SetValue(ManiaRulesetSetting.ScrollSpeed, 26d);
+                maniaMgr.SetValue(ManiaRulesetSetting.ScrollSpeed, Math.Clamp(settings.ScrollSpeed, 1.0, 40.0));
             }
         }
 
