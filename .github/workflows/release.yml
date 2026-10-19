@@ -18,10 +18,10 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Setup .NET 8
+      - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.x
+          dotnet-version: 10.x
 
       - name: Build and Publish
         run: |

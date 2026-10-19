@@ -23,7 +23,7 @@ to upgrade to make UI matches with actual game
 - [ ] TODO
 
 ## Requirements
-- [.NET 8.0](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
 - OpenGL ES 3.0 compatible device
 - FFmpeg installed
 
@@ -127,7 +127,7 @@ Usage:
 ## Build
 To build this project, you need:
 
-- .NET 8.0 SDK
+- .NET 10.0 SDK
 - Git
 
 Clone this repository (``git clone``), then build it with ``dotnet build -c Release`` command.
