@@ -71,10 +71,23 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         protected override void _finishInternal()
         {
-            InputStream.Close();
-            InputStream = null;
-            FFmpeg.WaitForExit();
+            var process = FFmpeg;
             FFmpeg = null;
+            try
+            {
+                InputStream?.Dispose();
+                InputStream = null;
+                if (process != null)
+                {
+                    process.WaitForExit();
+                    if (process.ExitCode != 0)
+                        throw new InvalidOperationException($"FFmpeg exited with code {process.ExitCode}");
+                }
+            }
+            finally
+            {
+                process?.Dispose();
+            }
         }
 
         protected override void _startInternal()

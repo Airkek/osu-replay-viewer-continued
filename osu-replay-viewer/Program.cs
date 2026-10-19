@@ -211,6 +211,7 @@ namespace osu_replay_renderer_netcore
             experimental.OnOptions += (args) => { experimentalFlags.Add(args[0]); };
             GameHost host;
             OsuGameRecorder game;
+            QueuedEncoder queuedEncoder = null;
 
             try
             {
@@ -298,6 +299,7 @@ namespace osu_replay_renderer_netcore
                             FFmpegMode.Binding => new FFmpegAutoGenEncoder(config),
                             _ => throw new ArgumentOutOfRangeException("FFmpeg mode")
                         };
+                        encoder = queuedEncoder = new QueuedEncoder(encoder);
                     }
 
                     host = new ReplayRecordGameHost(gameName, encoder, recordClock, orvConfig.RecordOptions.Renderer, patched, orvConfig.GameSettings);
@@ -427,8 +429,21 @@ namespace osu_replay_renderer_netcore
                 return;
             }
 
-            host.Run(game);
-            host.Dispose();
+            try
+            {
+                host.Run(game);
+            }
+            finally
+            {
+                try
+                {
+                    host.Dispose();
+                }
+                finally
+                {
+                    queuedEncoder?.Dispose();
+                }
+            }
         }
 
         static bool ParseBoolOrThrow(string str)
