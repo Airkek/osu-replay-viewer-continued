@@ -1,4 +1,4 @@
-﻿using osu.Framework;
+using osu.Framework;
 using osu.Framework.Configuration;
 using osu.Framework.Input.Handlers;
 using osu.Framework.Logging;
@@ -55,7 +55,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
         private readonly bool isFinishFramePatched;
         private readonly bool isAudioPatched;
         
-        private readonly StreamingAudioMixer audioMixer = new(new AudioFormat { Channels = 2, SampleRate = 44100, PCMSize = 2 });
+        private StreamingAudioMixer audioMixer = new(new AudioFormat { Channels = 2, PCMSize = 2 });
+        private readonly SamplePcmCache sampleCache = new();
         private ExternalAudioEncoder audioEncoder;
         private double lastAudioTime = 0;
 
@@ -87,6 +88,9 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public void SetAudioTrack(AudioBuffer track)
         {
             audioTrack = track;
+            var format = track.Format.CreateCopy();
+            format.PCMSize = 2;
+            audioMixer = new StreamingAudioMixer(format);
         }
 
         public void StartRecording()
@@ -97,7 +101,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             if (isAudioPatched)
             {
                 var audioPath = encoder.Config.OutputPath + ".audio.aac";
-                audioEncoder = new ExternalAudioEncoder(audioPath, 44100, 2, encoder.Config.FFmpegExec);
+                audioEncoder = new ExternalAudioEncoder(audioPath, audioMixer.Format.SampleRate, audioMixer.Format.Channels, encoder.Config.FFmpegExec);
                 audioEncoder.Start();
                 lastAudioTime = 0;
             }
@@ -209,20 +213,14 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 if (!sample.IsSampleBass()) return null;
 
                 var bass = sample.AsSampleBass();
-                if (bass.SampleId == 0) return null;
+                int sampleId = bass.SampleId;
+                if (sampleId == 0) return null;
 
-                var buff = bass.AsAudioBuffer();
+                var buff = sampleCache.Get(bass.Factory, sampleId, sample.AggregateFrequency.Value, bass.AsAudioBuffer);
                 if (buff == null) return null;
 
-                // Process buffer
-                buff = buff.CreateCopy();
-                if (Math.Abs(sample.AggregateFrequency.Value - 1) > double.Epsilon)
-                {
-                    buff.SoundTouchAll(p => p.Pitch = sample.AggregateFrequency.Value);
-                }
-                buff.Process(x => x * sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster);
-
-                var voice = audioMixer.AddVoice(buff);
+                double gain = sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster;
+                var voice = audioMixer.AddVoice(buff, gain);
                 return voice;
             };
             
