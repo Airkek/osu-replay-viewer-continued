@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Numerics;
 
 namespace osu_replay_renderer_netcore.Audio
@@ -8,44 +7,55 @@ namespace osu_replay_renderer_netcore.Audio
     public class StreamingAudioMixer
     {
         private readonly List<ActiveVoice> voices = new();
+        private readonly List<ActiveVoice> voicesToMix = new();
         private readonly object voicesLock = new();
+        private float[] mixBuffer = Array.Empty<float>();
+        private byte[] byteBuffer = Array.Empty<byte>();
         public readonly AudioFormat Format;
 
-        
         public StreamingAudioMixer(AudioFormat format)
         {
-            this.Format = format;
+            if (format.SampleRate <= 0 || format.Channels <= 0)
+                throw new ArgumentOutOfRangeException(nameof(format));
+            Format = format;
         }
 
         public class ActiveVoice
         {
             public AudioBuffer Buffer;
-            public double Position; // In samples (relative to buffer start)
-            public bool Stopped = false;
+            public double Position; // In samples relative to buffer start
+            public bool Stopped;
+            public double Gain = 1;
         }
 
-        public ActiveVoice AddVoice(AudioBuffer buffer)
+        public ActiveVoice AddVoice(AudioBuffer buffer, double gain = 1)
         {
-            var voice = new ActiveVoice { Buffer = buffer, Position = 0 };
+            var voice = new ActiveVoice { Buffer = buffer, Gain = gain };
             lock (voicesLock)
-            {
                 voices.Add(voice);
-            }
             return voice;
         }
 
-        public byte[] MixChunk(int sampleCount)
+        // The returned span remains valid until the next MixChunk call
+        public ReadOnlySpan<byte> MixChunk(int sampleCount)
         {
-            var mixBuffer = new float[sampleCount * Format.Channels];
-            var destSpan = mixBuffer.AsSpan();
+            if (sampleCount < 0)
+                throw new ArgumentOutOfRangeException(nameof(sampleCount));
 
-            List<ActiveVoice> voicesToMix = new();
+            int values = checked(sampleCount * Format.Channels);
+            int bytes = checked(values * Format.PCMSize);
+            if (mixBuffer.Length < values) mixBuffer = new float[values];
+            if (byteBuffer.Length < bytes) byteBuffer = new byte[bytes];
+            var destSpan = mixBuffer.AsSpan(0, values);
+            destSpan.Clear();
+            voicesToMix.Clear();
+
             lock (voicesLock)
             {
-                for (var i = voices.Count - 1; i >= 0; i--)
+                for (int i = voices.Count - 1; i >= 0; i--)
                 {
                     var voice = voices[i];
-                    if (voice is null || voice.Stopped || voice.Position >= voice.Buffer.Samples)
+                    if (voice.Stopped || voice.Position >= voice.Buffer.Samples)
                     {
                         voices.RemoveAt(i);
                         continue;
@@ -56,114 +66,79 @@ namespace osu_replay_renderer_netcore.Audio
 
             foreach (var voice in voicesToMix)
             {
-                // Calculate how many samples we can take from this voice
-                // We need to account for resampling if rates differ
                 double rateRatio = voice.Buffer.Format.SampleRate / (double)Format.SampleRate;
-                
-                // How many output samples we need: sampleCount
-                // How many input samples that corresponds to: sampleCount * rateRatio
+                float gain = (float)voice.Gain;
 
-                if (Math.Abs(rateRatio - 1.0) < double.Epsilon && voice.Buffer.Format.Channels == Format.Channels)
+                if (voice.Buffer.Format.SampleRate == Format.SampleRate &&
+                    voice.Buffer.Format.Channels == Format.Channels && voice.Position == Math.Floor(voice.Position))
                 {
-                    // Same sample rate - fast path
-                    int samplesAvailable = voice.Buffer.Samples - (int)voice.Position;
-                    int samplesToMix = Math.Min(sampleCount, samplesAvailable);
-                    
-                    int channels = Format.Channels;
-                    int totalSamples = samplesToMix * channels;
-                    int srcOffset = (int)voice.Position * channels;
-
-                    var srcSpan = voice.Buffer.Data.AsSpan(srcOffset, totalSamples);
-                    
-                    // Vectorized add
-                    int v = 0;
-                    int vectorSize = Vector<float>.Count;
-                    while (v <= totalSamples - vectorSize)
+                    int samplesToMix = Math.Min(sampleCount, voice.Buffer.Samples - (int)voice.Position);
+                    int totalValues = samplesToMix * Format.Channels;
+                    int srcOffset = (int)voice.Position * Format.Channels;
+                    int offset = 0;
+                    var vectorGain = new Vector<float>(gain);
+                    while (offset < totalValues)
                     {
-                        var vDest = new Vector<float>(destSpan.Slice(v));
-                        var vSrc = new Vector<float>(srcSpan.Slice(v));
-                        (vDest + vSrc).CopyTo(destSpan.Slice(v));
-                        v += vectorSize;
+                        var source = voice.Buffer.GetReadOnlySpan(srcOffset + offset, totalValues - offset);
+                        var destination = destSpan.Slice(offset, source.Length);
+                        int v = 0;
+                        int vectorSize = Vector<float>.Count;
+                        while (v <= source.Length - vectorSize)
+                        {
+                            var vDest = new Vector<float>(destination.Slice(v));
+                            var vSrc = new Vector<float>(source.Slice(v));
+                            (vDest + vSrc * vectorGain).CopyTo(destination.Slice(v));
+                            v += vectorSize;
+                        }
+                        for (; v < source.Length; v++)
+                            destination[v] += source[v] * gain;
+                        offset += source.Length;
                     }
-                    for (; v < totalSamples; v++)
-                    {
-                        destSpan[v] += srcSpan[v];
-                    }
-
                     voice.Position += samplesToMix;
                 }
                 else
                 {
-                    // Resampling path
                     for (int j = 0; j < sampleCount; j++)
                     {
                         double srcPos = voice.Position + j * rateRatio;
                         if (srcPos >= voice.Buffer.Samples) break;
-
                         int srcIndex = (int)srcPos;
-                        float mix = (float)(srcPos - srcIndex);
-
+                        float fraction = (float)(srcPos - srcIndex);
                         for (int ch = 0; ch < Format.Channels; ch++)
                         {
-                            int destIdx = j * Format.Channels + ch;
-
-                            int inputChannel = ch;
-                            if (inputChannel >= voice.Buffer.Format.Channels)
-                            {
-                                // If source is mono, duplicate to all channels
-                                if (voice.Buffer.Format.Channels == 1) inputChannel = 0;
-                                else inputChannel = -1;
-                            }
-
-                            float s1 = 0f;
-                            float s2 = 0f;
-
-                            if (inputChannel != -1)
-                            {
-                                s1 = voice.Buffer[inputChannel, srcIndex];
-                                s2 = (srcIndex + 1 < voice.Buffer.Samples) ? voice.Buffer[inputChannel, srcIndex + 1] : s1;
-                            }
-                            
-                            mixBuffer[destIdx] += s1 * (1f - mix) + s2 * mix;
+                            int inputChannel = ch < voice.Buffer.Format.Channels ? ch :
+                                voice.Buffer.Format.Channels == 1 ? 0 : -1;
+                            if (inputChannel < 0) continue;
+                            float first = voice.Buffer[inputChannel, srcIndex];
+                            float second = srcIndex + 1 < voice.Buffer.Samples ? voice.Buffer[inputChannel, srcIndex + 1] : first;
+                            destSpan[j * Format.Channels + ch] += (first * (1 - fraction) + second * fraction) * gain;
                         }
                     }
                     voice.Position += sampleCount * rateRatio;
                 }
             }
+            voicesToMix.Clear();
 
-            // Apply Tanh and write to stream
-            // We can reuse AudioBuffer's writing logic if we wrap this in a temp AudioBuffer
-            // But creating AudioBuffer allocates float array. We already have float array.
-            // Let's just write directly.
-            
-            // We need a byte buffer for writing
-            int bytesPerSample = Format.PCMSize;
-            byte[] byteBuffer = new byte[mixBuffer.Length * bytesPerSample];
-            int byteIdx = 0;
-
-            if (bytesPerSample == 2)
+            int byteIndex = 0;
+            if (Format.PCMSize == 2)
             {
-                for (int i = 0; i < mixBuffer.Length; i++)
+                for (int i = 0; i < values; i++)
                 {
-                    float val = (float)Math.Tanh(mixBuffer[i]);
-                    short sVal = (short)(val * 32767f);
-                    byteBuffer[byteIdx++] = (byte)(sVal & 0xFF);
-                    byteBuffer[byteIdx++] = (byte)((sVal >> 8) & 0xFF);
+                    short value = (short)((float)Math.Tanh(destSpan[i]) * 32767f);
+                    byteBuffer[byteIndex++] = (byte)(value & 0xff);
+                    byteBuffer[byteIndex++] = (byte)((value >> 8) & 0xff);
                 }
             }
             else
             {
-                // Fallback
-                for (int i = 0; i < mixBuffer.Length; i++)
+                for (int i = 0; i < values; i++)
                 {
-                    float val = (float)Math.Tanh(mixBuffer[i]);
-                    var bytes = Format.AmpToBytes(val);
-                    Array.Copy(bytes, 0, byteBuffer, byteIdx, bytes.Length);
-                    byteIdx += bytes.Length;
+                    var encoded = Format.AmpToBytes((float)Math.Tanh(destSpan[i]));
+                    encoded.CopyTo(byteBuffer, byteIndex);
+                    byteIndex += encoded.Length;
                 }
             }
-
-            return byteBuffer;
+            return byteBuffer.AsSpan(0, bytes);
         }
     }
 }

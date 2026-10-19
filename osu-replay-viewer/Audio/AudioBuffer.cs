@@ -1,13 +1,14 @@
-﻿using SoundTouch;
+using SoundTouch;
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 namespace osu_replay_renderer_netcore.Audio
 {
     /// <summary>
     /// Audio buffer. Can be the music or the sample. However, the internal sample datas
-    /// are represented as float (single precision float), which uses about 27.5 MiB (about
-    /// 28.8 MB) of system memory to store 5 minutes stereo buffer with 48kHz
+    /// are represented as float, requiring about 109.9 MiB (115.2 MB) of system memory
+    /// for 5 minutes of stereo audio at 48 kHz
     /// </summary>
     public class AudioBuffer
     {
@@ -27,11 +28,44 @@ namespace osu_replay_renderer_netcore.Audio
         /// </summary>
         public double Duration { get => ((double)Samples) / Format.SampleRate; }
 
+        private float[] data;
+        private readonly float[][] blocks;
+        internal const int BlockLength = 16384;
+
         /// <summary>
-        /// Buffer data. [c * n] is the channel #1 data, [c * n + 1] is the channel #2
-        /// data, etc...
+        /// Contiguous sample data for hitsounds
         /// </summary>
-        public float[] Data { get; private set; }
+        public float[] Data
+        {
+            get => data ?? throw new InvalidOperationException("This audio buffer uses segmented storage");
+            private set => data = value;
+        }
+
+        private AudioBuffer(AudioFormat format, float[][] blocks, int values)
+        {
+            Format = format;
+            this.blocks = blocks;
+            Samples = values / format.Channels;
+        }
+
+        internal static AudioBuffer FromBlocks(AudioFormat format, List<float[]> blocks, int values) =>
+            new(format, blocks.ToArray(), values);
+
+        public ReadOnlySpan<float> GetReadOnlySpan(int offset, int count)
+        {
+            int available = Samples * Format.Channels - offset;
+            if (offset < 0 || count < 0 || available < 0)
+                throw new ArgumentOutOfRangeException(nameof(offset));
+
+            count = Math.Min(count, available);
+            if (blocks == null)
+                return Data.AsSpan(offset, count);
+            if (count == 0)
+                return ReadOnlySpan<float>.Empty;
+
+            int blockOffset = offset % BlockLength;
+            return blocks[offset / BlockLength].AsSpan(blockOffset, Math.Min(count, BlockLength - blockOffset));
+        }
 
         public AudioBuffer(AudioFormat format, int samples)
         {
@@ -50,10 +84,15 @@ namespace osu_replay_renderer_netcore.Audio
         {
             get {
                 int a = Format.Channels * index + channel;
-                if (a >= Data.Length) return 0f;
-                return Data[Format.Channels * index + channel];
+                if (a >= Samples * Format.Channels) return 0f;
+                return blocks == null ? Data[a] : blocks[a / BlockLength][a % BlockLength];
             }
-            set => Data[Format.Channels * index + channel] = value;
+            set
+            {
+                int a = Format.Channels * index + channel;
+                if (blocks == null) Data[a] = value;
+                else blocks[a / BlockLength][a % BlockLength] = value;
+            }
         }
 
         public float InterpolateAt(double t, int channel)
@@ -96,7 +135,8 @@ namespace osu_replay_renderer_netcore.Audio
 
             stream.Write(new byte[] { 0x64, 0x61, 0x74, 0x61 }); // "data"
             stream.Write(BitConverter.GetBytes(Samples * Format.Channels * Format.PCMSize)); // int: Subchunk2Size
-            for (int i = 0; i < Data.Length; i++) stream.Write(Format.AmpToBytes(Data[i]));
+            for (int i = 0; i < Samples; i++)
+                for (int ch = 0; ch < Format.Channels; ch++) stream.Write(Format.AmpToBytes(this[ch, i]));
         }
 
         public AudioBuffer Process(Func<double, double> func)
@@ -123,7 +163,13 @@ namespace osu_replay_renderer_netcore.Audio
         {
             var formatCopy = Format.CreateCopy();
             var buff2 = new AudioBuffer(formatCopy, Samples);
-            Array.Copy(Data, buff2.Data, Data.Length);
+            int offset = 0;
+            while (offset < buff2.Data.Length)
+            {
+                var source = GetReadOnlySpan(offset, buff2.Data.Length - offset);
+                source.CopyTo(buff2.Data.AsSpan(offset));
+                offset += source.Length;
+            }
             return buff2;
         }
 

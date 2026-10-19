@@ -63,7 +63,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             InputStream.Write(buffer);
         }
 
-        public void Write(byte[] data)
+        public void Write(ReadOnlySpan<byte> data)
         {
             if (InputStream == null) return;
             InputStream.Write(data);

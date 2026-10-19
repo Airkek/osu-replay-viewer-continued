@@ -43,7 +43,6 @@ namespace osu_replay_renderer_netcore
             OptionDescription recordMode;
             OptionDescription recordOutput;
 
-            OptionDescription experimental;
             OptionDescription overrideOverlayOptions;
             OptionDescription applySkin;
             OptionDescription listSkins;
@@ -144,14 +143,6 @@ namespace osu_replay_renderer_netcore
                     },
 
                     // Misc
-                    experimental = new()
-                    {
-                        Name = "Experimental Toggle",
-                        Description = "Toggle experimental feature",
-                        DoubleDashes = new[] { "experimental" },
-                        SingleDash = new[] { "experimental" },
-                        Parameters = new[] { "Flag" }
-                    },
                     overrideOverlayOptions = new()
                     {
                         Name = "Override Overlay Options",
@@ -205,12 +196,11 @@ namespace osu_replay_renderer_netcore
             }
 
             var modsOverride = new List<string>();
-            var experimentalFlags = new List<string>();
             
             modOverride.OnOptions += (args) => { modsOverride.Add(args[0]); };
-            experimental.OnOptions += (args) => { experimentalFlags.Add(args[0]); };
             GameHost host;
             OsuGameRecorder game;
+            QueuedEncoder queuedEncoder = null;
 
             try
             {
@@ -298,6 +288,7 @@ namespace osu_replay_renderer_netcore
                             FFmpegMode.Binding => new FFmpegAutoGenEncoder(config),
                             _ => throw new ArgumentOutOfRangeException("FFmpeg mode")
                         };
+                        encoder = queuedEncoder = new QueuedEncoder(encoder);
                     }
 
                     host = new ReplayRecordGameHost(gameName, encoder, recordClock, orvConfig.RecordOptions.Renderer, patched, orvConfig.GameSettings);
@@ -309,7 +300,6 @@ namespace osu_replay_renderer_netcore
                 
                 game = new OsuGameRecorder(orvConfig.GameSettings);
                 game.ModsOverride = modsOverride;
-                game.ExperimentalFlags = experimentalFlags;
                 game.PreserveImportedFiles = preserveImportedFiles.Triggered;
                 game.ExtendedImportInfo = extendedImportInfo.Triggered;
 
@@ -427,8 +417,21 @@ namespace osu_replay_renderer_netcore
                 return;
             }
 
-            host.Run(game);
-            host.Dispose();
+            try
+            {
+                host.Run(game);
+            }
+            finally
+            {
+                try
+                {
+                    host.Dispose();
+                }
+                finally
+                {
+                    queuedEncoder?.Dispose();
+                }
+            }
         }
 
         static bool ParseBoolOrThrow(string str)

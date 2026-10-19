@@ -1,9 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Globalization;
-using System.Text;
 
 namespace osu_replay_renderer_netcore.Audio.Conversion
 {
@@ -12,7 +11,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
         public static string FFmpegExec = "ffmpeg";
 
         public static AudioBuffer Decode(string path, double tempoFactor = 1.0, double pitchFactor = 1.0,
-            double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int outRate = 48000)
+            double rateFactor = 1.0, double volume = 1.0, int outChannels = 2, int? outRate = null)
         {
             var filterParts = new List<string>();
 
@@ -41,48 +40,56 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                 filterParts.Add($"volume={volume.ToString(CultureInfo.InvariantCulture)}");
             }
 
-            var args = new StringBuilder();
-            args.Append($"-i \"{path}\" ");
-
-            if (filterParts.Count > 0)
-            {
-                args.Append($"-af \"{string.Join(",", filterParts)}\" ");
-            }
-
-            args.Append($"-f s16le -acodec pcm_s16le -ac {outChannels} -ar {outRate} -");
-
-            Console.WriteLine($"Starting FFmpeg with arguments: {args}");
+            if (outChannels <= 0 || outRate is <= 0)
+                throw new ArgumentOutOfRangeException(nameof(outChannels));
 
             using var ffmpeg = new Process
             {
                 StartInfo =
                 {
                     FileName = FFmpegExec,
-                    Arguments = args.ToString(),
                     UseShellExecute = false,
                     RedirectStandardOutput = true
                 }
             };
-
-            ffmpeg.Start();
-
-            var outputStream = new MemoryStream();
-            ffmpeg.StandardOutput.BaseStream.CopyTo(outputStream);
-            outputStream.Position = 0;
-
-            ffmpeg.WaitForExit();
-
-            int sampleCount = (int)outputStream.Length / 2;
-            var buffer = new AudioBuffer(
-                new AudioFormat { Channels = outChannels, SampleRate = outRate, PCMSize = 2 },
-                sampleCount / outChannels
-            );
-
-            using var reader = new BinaryReader(outputStream);
-            for (int i = 0; i < sampleCount; i++)
+            var args = ffmpeg.StartInfo.ArgumentList;
+            args.Add("-i");
+            args.Add(path);
+            args.Add("-vn");
+            if (filterParts.Count > 0)
             {
-                buffer.Data[i] = reader.ReadInt16() / 32768f;
+                args.Add("-af");
+                args.Add(string.Join(",", filterParts));
             }
+            args.Add("-f");
+            args.Add("wav");
+            args.Add("-acodec");
+            args.Add("pcm_f32le");
+            args.Add("-ac");
+            args.Add(outChannels.ToString(CultureInfo.InvariantCulture));
+            if (outRate.HasValue)
+            {
+                args.Add("-ar");
+                args.Add(outRate.Value.ToString(CultureInfo.InvariantCulture));
+            }
+            args.Add("-");
+
+            Console.WriteLine($"Decoding float PCM with FFmpeg: {path}");
+            ffmpeg.Start();
+            AudioBuffer buffer;
+            try
+            {
+                buffer = FloatWaveReader.Read(ffmpeg.StandardOutput.BaseStream);
+                ffmpeg.WaitForExit();
+            }
+            catch
+            {
+                if (!ffmpeg.HasExited) ffmpeg.Kill();
+                ffmpeg.WaitForExit();
+                throw;
+            }
+            if (ffmpeg.ExitCode != 0)
+                throw new InvalidDataException($"FFmpeg audio decode failed with exit code {ffmpeg.ExitCode}");
 
             return buffer;
         }

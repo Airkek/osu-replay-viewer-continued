@@ -1,4 +1,4 @@
-﻿using ManagedBass;
+using ManagedBass;
 using osu.Framework.Audio.Mixing;
 using osu.Framework.Audio.Sample;
 using System;
@@ -14,6 +14,7 @@ namespace osu_replay_renderer_netcore.Audio
         public readonly ISample TargetedSample;
 
         private readonly object factory;
+        internal object Factory => factory;
 
         public int SampleId => (int)SampleBassFactory.GetMethod("get_SampleId").Invoke(factory, null);
         public override double Length => 0;

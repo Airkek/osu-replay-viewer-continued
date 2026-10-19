@@ -14,6 +14,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         private AVFrame* _frame;
         private int _pts;
         private long _bitrate;
+        private bool _headerWritten;
 
         public override bool CanWrite => _formatContext != null && _formatContext->pb != null;
 
@@ -137,7 +138,9 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 throw new InvalidOperationException("Could not open output file");
 
             // Write header
-            ffmpeg.avformat_write_header(_formatContext, null);
+            if (ffmpeg.avformat_write_header(_formatContext, null) < 0)
+                throw new InvalidOperationException("Could not write output header");
+            _headerWritten = true;
         }
 
         private AVPixelFormat GetAVPixelFormat(PixelFormatMode mode) => mode switch
@@ -314,46 +317,57 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         protected override void _finishInternal()
         {
-            if (_pixelBuffer is not null)
-            {
-                ArrayPool<byte>.Shared.Return(_pixelBuffer);
-            }
-            // Flush encoder
-            ffmpeg.avcodec_send_frame(_codecContext, null);
-
-            AVPacket* packet = ffmpeg.av_packet_alloc();
             try
             {
-                while (ffmpeg.avcodec_receive_packet(_codecContext, packet) >= 0)
+                if (_codecContext != null && ffmpeg.avcodec_is_open(_codecContext) != 0)
                 {
-                    ffmpeg.av_packet_rescale_ts(packet, _codecContext->time_base, _videoStream->time_base);
-                    packet->stream_index = _videoStream->index;
-                    ffmpeg.av_interleaved_write_frame(_formatContext, packet);
-                    ffmpeg.av_packet_unref(packet);
+                    // Flush encoder before releasing its buffers
+                    ffmpeg.avcodec_send_frame(_codecContext, null);
+                    AVPacket* packet = ffmpeg.av_packet_alloc();
+                    try
+                    {
+                        while (ffmpeg.avcodec_receive_packet(_codecContext, packet) >= 0)
+                        {
+                            ffmpeg.av_packet_rescale_ts(packet, _codecContext->time_base, _videoStream->time_base);
+                            packet->stream_index = _videoStream->index;
+                            ffmpeg.av_interleaved_write_frame(_formatContext, packet);
+                            ffmpeg.av_packet_unref(packet);
+                        }
+                    }
+                    finally
+                    {
+                        ffmpeg.av_packet_free(&packet);
+                    }
                 }
+
+                if (_headerWritten)
+                    ffmpeg.av_write_trailer(_formatContext);
             }
             finally
             {
-                ffmpeg.av_packet_free(&packet);
+                if (_pixelBuffer is not null)
+                {
+                    ArrayPool<byte>.Shared.Return(_pixelBuffer);
+                    _pixelBuffer = null;
+                }
+                fixed (AVCodecContext** ctx = &_codecContext) ffmpeg.avcodec_free_context(ctx);
+                fixed (AVFrame** frame = &_frame) ffmpeg.av_frame_free(frame);
+                if (_swsContext != null) ffmpeg.sws_freeContext(_swsContext);
+                if (_formatContext != null)
+                {
+                    if (_formatContext->pb != null)
+                        ffmpeg.avio_closep(&_formatContext->pb);
+                    ffmpeg.avformat_free_context(_formatContext);
+                }
+
+                _formatContext = null;
+                _codecContext = null;
+                _swsContext = null;
+                _videoStream = null;
+                _frame = null;
+                _headerWritten = false;
+                _pts = 0;
             }
-
-            // Write trailer
-            ffmpeg.av_write_trailer(_formatContext);
-
-            // Cleanup
-            ffmpeg.avcodec_close(_codecContext);
-            fixed (AVCodecContext** ctx = &_codecContext) ffmpeg.avcodec_free_context(ctx);
-            fixed (AVFrame** frame = &_frame) ffmpeg.av_frame_free(frame);
-            if (_swsContext != null) ffmpeg.sws_freeContext(_swsContext);
-            ffmpeg.avio_closep(&_formatContext->pb);
-            ffmpeg.avformat_free_context(_formatContext);
-
-            _formatContext = null;
-            _codecContext = null;
-            _swsContext = null;
-            _videoStream = null;
-            _frame = null;
-            _pts = 0;
         }
 
         private long ParseBitrate(string bitrateStr)
