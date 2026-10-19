@@ -57,7 +57,7 @@ jobs:
         with:
           generate_release_notes: true
           draft: false
-          prerelease: false
+          prerelease: ${{ endsWith(github.ref_name, '-pre') }}
           files: |
             artifacts/**/*
         env:
