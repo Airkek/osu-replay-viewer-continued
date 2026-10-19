@@ -239,35 +239,49 @@ namespace osu_replay_renderer_netcore
                 // Hacky way to get realm access
                 RealmAccess realm = (RealmAccess) typeof(ScoreManager).GetProperty("Realm", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(ScoreManager);
 
-                foreach (ScoreInfo info in realm.Run(r => r.All<ScoreInfo>().Detach()))
+                var scores = realm.Run(r =>
                 {
-                    if (!(
-                        ListQuery == null ||
-                        (
-                            info.BeatmapInfo.GetDisplayTitle().Contains(ListQuery, StringComparison.OrdinalIgnoreCase) ||
-                            info.User.Username.Contains(ListQuery, StringComparison.OrdinalIgnoreCase)
-                        )
-                    )) continue;
-
-                    try
+                    var entries = new List<(string Beatmap, string ReplayCommand, string Details)>();
+                    foreach (ScoreInfo info in r.All<ScoreInfo>())
                     {
-                        long scoreId = info.OnlineID;
-                        if (scoreId <= 0) scoreId = -1;
+                        if (!(
+                            ListQuery == null ||
+                            (
+                                info.BeatmapInfo.GetDisplayTitle().Contains(ListQuery, StringComparison.OrdinalIgnoreCase) ||
+                                info.User.Username.Contains(ListQuery, StringComparison.OrdinalIgnoreCase)
+                            )
+                        )) continue;
 
-                        string onlineScoreID = scoreId == -1 ? "" : $" (Online Score ID: #{scoreId})";
-                        string mods = "(no mod)";
-                        if (info.Mods.Length > 0)
+                        try
                         {
-                            mods = "";
-                            foreach (var mod in info.Mods) mods += (mods.Length > 0 ? ", " : "") + mod.Name;
-                        }
+                            long scoreId = info.OnlineID;
+                            if (scoreId <= 0) scoreId = -1;
 
-                        Console.WriteLine($"{info.BeatmapInfo.GetDisplayTitle()} | {info.BeatmapInfo.StarRating:F1}*");
-                        Console.WriteLine($"View replay: --view local {info.ID}");
-                        Console.WriteLine($"{info.Ruleset.Name} | Played by {info.User.Username}{onlineScoreID} | Ranked Score: {info.TotalScore:N0} ({info.DisplayAccuracy} {RankToActualRank(info.Rank)}) | Mods: {mods}");
-                        Console.WriteLine();
+                            string onlineScoreID = scoreId == -1 ? "" : $" (Online Score ID: #{scoreId})";
+                            string mods = "(no mod)";
+                            var scoreMods = info.Mods;
+                            if (scoreMods.Length > 0)
+                            {
+                                mods = "";
+                                foreach (var mod in scoreMods) mods += (mods.Length > 0 ? ", " : "") + mod.Name;
+                            }
+
+                            entries.Add((
+                                $"{info.BeatmapInfo.GetDisplayTitle()} | {info.BeatmapInfo.StarRating:F1}*",
+                                $"View replay: --view local {info.ID}",
+                                $"{info.Ruleset.Name} | Played by {info.User.Username}{onlineScoreID} | Ranked Score: {info.TotalScore:N0} ({info.DisplayAccuracy} {RankToActualRank(info.Rank)}) | Mods: {mods}"));
+                        }
+                        catch (RulesetLoadException) { }
                     }
-                    catch (RulesetLoadException) { }
+                    return entries;
+                });
+
+                foreach (var scoreEntry in scores)
+                {
+                    Console.WriteLine(scoreEntry.Beatmap);
+                    Console.WriteLine(scoreEntry.ReplayCommand);
+                    Console.WriteLine(scoreEntry.Details);
+                    Console.WriteLine();
                 }
                 Console.WriteLine("--------------------");
                 Console.WriteLine();
@@ -283,10 +297,11 @@ namespace osu_replay_renderer_netcore
 
                 RealmAccess realm = (RealmAccess) typeof(SkinManager).GetProperty("Realm", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(SkinManager);
 
-                foreach (SkinInfo info in realm.Run(r => r.All<SkinInfo>().Detach()))
+                var skins = realm.Run(r => r.All<SkinInfo>().AsEnumerable().Select(info => (info.Name, info.ID)).ToArray());
+                foreach (var skin in skins)
                 {
-                    var extendedInfo = ExtendedImportInfo ? $", ID: '{info.ID}'" : "";
-                    Console.WriteLine($"- '{info.Name}'{extendedInfo}");
+                    var extendedInfo = ExtendedImportInfo ? $", ID: '{skin.ID}'" : "";
+                    Console.WriteLine($"- '{skin.Name}'{extendedInfo}");
                 }
                 Console.WriteLine("--------------------");
                 Console.WriteLine();
