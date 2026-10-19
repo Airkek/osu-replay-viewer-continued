@@ -43,7 +43,6 @@ namespace osu_replay_renderer_netcore
             OptionDescription recordMode;
             OptionDescription recordOutput;
 
-            OptionDescription experimental;
             OptionDescription overrideOverlayOptions;
             OptionDescription applySkin;
             OptionDescription listSkins;
@@ -144,14 +143,6 @@ namespace osu_replay_renderer_netcore
                     },
 
                     // Misc
-                    experimental = new()
-                    {
-                        Name = "Experimental Toggle",
-                        Description = "Toggle experimental feature",
-                        DoubleDashes = new[] { "experimental" },
-                        SingleDash = new[] { "experimental" },
-                        Parameters = new[] { "Flag" }
-                    },
                     overrideOverlayOptions = new()
                     {
                         Name = "Override Overlay Options",
@@ -205,10 +196,8 @@ namespace osu_replay_renderer_netcore
             }
 
             var modsOverride = new List<string>();
-            var experimentalFlags = new List<string>();
             
             modOverride.OnOptions += (args) => { modsOverride.Add(args[0]); };
-            experimental.OnOptions += (args) => { experimentalFlags.Add(args[0]); };
             GameHost host;
             OsuGameRecorder game;
 
@@ -309,7 +298,6 @@ namespace osu_replay_renderer_netcore
                 
                 game = new OsuGameRecorder(orvConfig.GameSettings);
                 game.ModsOverride = modsOverride;
-                game.ExperimentalFlags = experimentalFlags;
                 game.PreserveImportedFiles = preserveImportedFiles.Triggered;
                 game.ExtendedImportInfo = extendedImportInfo.Triggered;
 
