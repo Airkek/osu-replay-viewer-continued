@@ -103,11 +103,6 @@ Usage:
     Record Output
     Set record output
 
-  --experimental           <Flag>
-    Alternatives: -experimental
-    Experimental Toggle
-    Toggle experimental feature
-
   --overlay-override       <true/false>
     Alternatives: -overlay
     Override Overlay Options
