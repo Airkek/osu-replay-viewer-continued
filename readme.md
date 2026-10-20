@@ -24,6 +24,16 @@ Recording always uses SingleThread execution to preserve replay simulation accur
 MultiThreaded settings in `framework.ini` or runtime changes are ignored while recording.
 Replay viewing keeps the configured execution mode.
 
+With `--osu-mode`, the original osu! Realm is opened read-only to create a temporary working
+snapshot. Runtime caches, ruleset updates and other database maintenance affect only that snapshot,
+which is removed on exit. Pending deletions and file-store cleanup are disabled so they cannot
+remove osu! files. Explicit beatmap, skin and replay archive imports use the normal osu! importers
+to write to the original database, then copy the imported records and IDs into the working snapshot.
+The original database is never automatically migrated, recovered or recreated; an incompatible,
+missing or unreadable database causes the operation to fail. Changes made by another osu! process
+after the snapshot was created are not reflected in the viewer. This protects the Realm and its
+file store; osu! configuration and log files still use the selected storage directory.
+
 Replay viewing and recording do not log in to osu!, including with `--osu-mode`. Saved osu!lazer
 login credentials are not used or cleared. `--view online <score ID>` selects an already downloaded
 replay from local storage by its online score ID.
