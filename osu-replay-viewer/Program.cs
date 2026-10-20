@@ -13,6 +13,7 @@ using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 using osu.Framework.Timing;
+using osu_replay_renderer_netcore.Online;
 
 namespace osu_replay_renderer_netcore
 {
@@ -39,6 +40,8 @@ namespace osu_replay_renderer_netcore
             OptionDescription generalHelp;
             OptionDescription generalList;
             OptionDescription generalView;
+            OptionDescription downloadReplay;
+            OptionDescription replayOutput;
 
             OptionDescription recordMode;
             OptionDescription recordOutput;
@@ -105,7 +108,21 @@ namespace osu_replay_renderer_netcore
                         Description = "Select a replay to view. This options must be always present (excluding -list options)",
                         DoubleDashes = new[] { "view" },
                         SingleDash = new[] { "view", "i" },
-                        Parameters = new[] { "Type (local/online/file/auto)", "Score GUID/Beatmap ID (auto)/File.osr" }
+                        Parameters = new[] { "Type (local/online/file/auto/api)", "Score GUID/Beatmap ID (auto)/File.osr" }
+                    },
+                    downloadReplay = new()
+                    {
+                        Name = "Download Replay",
+                        Description = "Download an .osr replay by its API v2 score ID without starting the game",
+                        DoubleDashes = new[] { "download-replay" },
+                        Parameters = new[] { "Score ID" }
+                    },
+                    replayOutput = new()
+                    {
+                        Name = "Replay Output",
+                        Description = "Path for --download-replay or --view api; defaults to <score ID>.osr; --yes allows overwrite",
+                        DoubleDashes = new[] { "replay-output" },
+                        Parameters = new[] { "Path" }
                     },
                     generalHelp = new()
                     {
@@ -216,6 +233,38 @@ namespace osu_replay_renderer_netcore
                 }
                 
                 var orvConfig = Config.ReadFromFile(orvConfigPath[0]);
+                bool apiView = generalView.Triggered && generalView[0] == "api";
+
+                if (downloadReplay.Triggered)
+                {
+                    if (generalView.Triggered || generalList.Triggered || listSkins.Triggered || recordMode.Triggered ||
+                        beatmapImport.Triggered || applySkin.Triggered)
+                        throw new CLIException
+                        {
+                            Cause = "osu! API commands",
+                            DisplayMessage = "Use --download-replay as a standalone command, or --view api to download and play a replay"
+                        };
+
+                    string path = OsuApiCommands.DownloadReplay(orvConfig, downloadReplay[0],
+                        replayOutput.Triggered ? replayOutput[0] : null, alwaysYes.Triggered);
+                    Console.WriteLine(path);
+                    return;
+                }
+
+                if (replayOutput.Triggered && !apiView)
+                    throw new CLIException { Cause = "osu! API commands", DisplayMessage = "--replay-output requires --download-replay or --view api" };
+
+                if (apiView)
+                {
+                    if (generalList.Triggered || listSkins.Triggered)
+                        throw new CLIException { Cause = "osu! API commands", DisplayMessage = "--view api cannot be combined with --list or --list-skins" };
+
+                    string path = OsuApiCommands.DownloadReplay(orvConfig, generalView[1],
+                        replayOutput.Triggered ? replayOutput[0] : null, alwaysYes.Triggered);
+                    generalView[0] = "file";
+                    generalView[1] = path;
+                    Console.WriteLine($"Downloaded replay: {path}");
+                }
 
                 var gameName = GAME_NAME;
 
@@ -304,7 +353,7 @@ namespace osu_replay_renderer_netcore
                     host = Host.GetSuitableDesktopHost(gameName);
                 }
                 
-                game = new OsuGameRecorder(orvConfig.GameSettings);
+                game = new OsuGameRecorder(orvConfig.GameSettings, orvConfig.OsuApi);
                 game.ModsOverride = modsOverride;
                 game.PreserveImportedFiles = preserveImportedFiles.Triggered;
                 game.ExtendedImportInfo = extendedImportInfo.Triggered;
@@ -395,7 +444,7 @@ namespace osu_replay_renderer_netcore
                             {
                                 Cause = "Command-line Arguments (Options)",
                                 DisplayMessage = $"Unknown type: {generalView[0]}",
-                                Suggestions = new[] { "Available types: local/online/file/auto" }
+                                Suggestions = new[] { "Available types: local/online/file/auto/api" }
                             };
                     }
                     game.ReplayViewType = generalView[0];
@@ -410,15 +459,16 @@ namespace osu_replay_renderer_netcore
 
             } catch (CLIException cliException)
             {
-                Console.WriteLine("Error while processing CLI arguments:");
-                Console.WriteLine($"  Cause:      {cliException.Cause}");
-                Console.WriteLine($"  Message:    {cliException.DisplayMessage}");
+                Environment.ExitCode = 2;
+                Console.Error.WriteLine("Error while processing CLI arguments:");
+                Console.Error.WriteLine($"  Cause:      {cliException.Cause}");
+                Console.Error.WriteLine($"  Message:    {cliException.DisplayMessage}");
                 if (cliException.Suggestions.Length == 0) return;
-                else if (cliException.Suggestions.Length == 1) Console.WriteLine($"  Suggestion: {cliException.Suggestions[0]}");
+                else if (cliException.Suggestions.Length == 1) Console.Error.WriteLine($"  Suggestion: {cliException.Suggestions[0]}");
                 else
                 {
-                    Console.WriteLine("  Suggestions:");
-                    for (int i = 0; i < cliException.Suggestions.Length; i++) Console.WriteLine("  - " + cliException.Suggestions[i]);
+                    Console.Error.WriteLine("  Suggestions:");
+                    for (int i = 0; i < cliException.Suggestions.Length; i++) Console.Error.WriteLine("  - " + cliException.Suggestions[i]);
                 }
                 return;
             }

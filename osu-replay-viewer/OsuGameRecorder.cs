@@ -9,6 +9,13 @@ using osu.Game;
 using osu.Game.Beatmaps;
 using osu.Game.Database;
 using osu.Game.Graphics.Containers;
+using osu.Game.Online.API;
+using osu.Game.Online.API.Requests.Responses;
+using osu.Game.Online.Leaderboards;
+using osu_replay_renderer_netcore.CLI;
+using osu_replay_renderer_netcore.Online;
+using Newtonsoft.Json;
+using System.Net.Http;
 using osu.Game.Rulesets;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Scoring;
@@ -66,10 +73,16 @@ namespace osu_replay_renderer_netcore
         private TestRulesetConfigCache configCache = new TestRulesetConfigCache();
 
         private GameSettings settings;
+        private readonly Config.OsuApiOptionsObject apiOptions;
 
-        public OsuGameRecorder(GameSettings settings)
+        public OsuGameRecorder(GameSettings settings, Config.OsuApiOptionsObject apiOptions = null)
         {
             this.settings = settings;
+            this.apiOptions = apiOptions;
+
+            // Avoid automatic login with the shared osu!lazer credentials
+            API = new DummyAPIAccess();
+            API.Logout();
         }
 
         private string TempFolder = Path.GetTempPath();
@@ -505,7 +518,8 @@ namespace osu_replay_renderer_netcore
                 recordHost.SetAudioTrack(track);
             }
 
-            Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer, SkipIntro);
+            var leaderboard = settings.ShowLeaderboard ? LoadLeaderboard(score, beatmap) : null;
+            Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer, SkipIntro, leaderboard);
             
             Player.OnFailed += () =>
             {
@@ -541,6 +555,44 @@ namespace osu_replay_renderer_netcore
             {
                 maniaMgr.SetValue(ManiaRulesetSetting.ScrollSpeed, Math.Clamp(settings.ScrollSpeed, 1.0, 40.0));
             }
+        }
+
+        private LeaderboardScores LoadLeaderboard(Score score, BeatmapInfo beatmap)
+        {
+            if (beatmap.OnlineID <= 0)
+            {
+                Console.Error.WriteLine("[Leaderboard] The beatmap has no online ID; continuing without a leaderboard");
+                return null;
+            }
+
+            try
+            {
+                const int limit = 50;
+                Console.WriteLine("Loading online leaderboard...");
+                using var client = OsuApiCommands.CreateClient(apiOptions);
+                using var response = client.GetLeaderboardAsync(beatmap.OnlineID, score.ScoreInfo.Ruleset.ShortName, limit).GetAwaiter().GetResult();
+                var collection = JsonConvert.DeserializeObject<APIScoresCollection>(response.RootElement.GetRawText());
+                if (collection?.Scores == null || collection.Scores.Any(s => s == null))
+                    throw new InvalidOperationException("osu! API returned an invalid leaderboard");
+
+                var scores = collection.Scores.Select(s => s.ToScoreInfo(RulesetStore, beatmap)).OrderByTotalScore().ToArray();
+                for (int i = 0; i < scores.Length; i++)
+                    scores[i].Position = i + 1;
+
+                int totalScores = collection.ScoresCount;
+                if (totalScores == 0)
+                    totalScores = scores.Length < limit ? scores.Length : int.MaxValue;
+                return LeaderboardScores.Success(scores, limit, totalScores, null);
+            }
+            catch (CLIException e)
+            {
+                Console.Error.WriteLine($"[Leaderboard] {e.DisplayMessage}; continuing without a leaderboard");
+            }
+            catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException or ArgumentException or JsonException or OperationCanceledException)
+            {
+                Console.Error.WriteLine($"[Leaderboard] {e.Message}; continuing without a leaderboard");
+            }
+            return null;
         }
 
         [BackgroundDependencyLoader]

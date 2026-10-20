@@ -17,6 +17,7 @@ public enum FFmpegMode
 public class GameSettings
 {
     [JsonProperty("skip_intro")] public bool SkipIntro = false;
+    [JsonProperty("show_leaderboard")] public bool ShowLeaderboard = false;
     [JsonProperty("background_dim")] public double BackgroundDim = 0.75;
     [JsonProperty("scroll_speed")] public double ScrollSpeed = 26.0;
     [JsonProperty("show_storyboard_or_video")] public bool ShowStoryboard = true;
@@ -30,6 +31,13 @@ public class GameSettings
 
 public class Config
 {
+    public class OsuApiOptionsObject
+    {
+        [JsonProperty("client_id")] public int ClientId;
+        [JsonProperty("client_secret")] public string ClientSecret = string.Empty;
+    }
+    [JsonProperty("osu_api")] public OsuApiOptionsObject OsuApi = new();
+
     public class RecordOptionsObject
     {
         [JsonProperty("fps")] public int FrameRate = 60;
