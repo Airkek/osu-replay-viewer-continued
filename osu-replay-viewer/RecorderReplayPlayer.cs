@@ -1,12 +1,9 @@
 ﻿using osu.Framework.Screens;
-using osu.Game.Beatmaps;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Scoring;
 using osu.Game.Screens.Play;
 using System;
 using System.Linq;
-using System.Reflection;
-using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 
 namespace osu_replay_renderer_netcore
 {
@@ -70,16 +67,6 @@ namespace osu_replay_renderer_netcore
             {
                 GameplayClockContainer.Reset();
                 GameplayClockContainer.Start();
-                FieldInfo gameplayClockField = typeof(GameplayClockContainer)
-                    .GetField("GameplayClock", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                
-                var ogClock = gameplayClockField.GetValue(GameplayClockContainer) as FramedBeatmapClock;
-                var clock = ogClock.Source as WrappedClock;
-                foreach (Mod mod in GivenScore.ScoreInfo.Mods)
-                {
-                    if (mod is IApplicableToRate rateMod) clock.RateMod = rateMod;
-                }
-
                 if (Configuration.AutomaticallySkipIntro)
                 {
                     SchedulerAfterChildren.Add(() =>

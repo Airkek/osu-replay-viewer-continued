@@ -18,6 +18,7 @@ using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts.CustomClocks;
 using osu_replay_renderer_netcore.Record;
 using osu.Framework.Audio.Sample;
+using osu.Framework.Audio;
 using osu.Framework.Graphics.Audio;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Rendering;
@@ -55,16 +56,20 @@ namespace osu_replay_renderer_netcore.CustomHosts
         private readonly bool isFinishFramePatched;
         private readonly bool isAudioPatched;
 
-        private StreamingAudioMixer audioMixer = new(new AudioFormat { Channels = 2, PCMSize = 2 });
+        private AudioFormat audioFormat = new() { Channels = 2, PCMSize = 2 };
         private readonly SamplePcmCache sampleCache = new();
-        private ExternalAudioEncoder audioEncoder;
-        private IEncoderAudioInput combinedAudioEncoder;
-        private double lastAudioTime = 0;
+        private RecordedAudioMixer recordedAudio;
+        private readonly List<MusicPlaybackSegment> musicSegments = new();
+        private readonly Dictionary<int, RecordedSampleVoice> sampleVoices = new();
+        private WrappedClock gameplayClock;
+        private IAdjustableAudioComponent gameplayTrack;
+        private Func<double> gameplayOffset;
+        private bool recordingStarted;
+        private double sampleGain;
 
-        private AudioBuffer audioTrack = null;
-        private StreamingAudioMixer.ActiveVoice audioTrackVoice = null;
+        private FFmpegMusicSource musicSource;
         private bool isAudioPlayed = false;
-        public bool NeedAudio => isAudioPatched && audioTrack is null;
+        public bool NeedAudio => isAudioPatched && musicSource is null;
 
         private readonly GlRenderer rendererType;
         private RenderWrapper wrapper;
@@ -86,31 +91,59 @@ namespace osu_replay_renderer_netcore.CustomHosts
             PrepareAudioRendering(settings);
         }
 
-        public void SetAudioTrack(AudioBuffer track)
+        internal void SetMusicSource(FFmpegMusicSource source)
         {
-            audioTrack = track;
-            var format = track.Format.CreateCopy();
-            format.PCMSize = 2;
-            audioMixer = new StreamingAudioMixer(format);
+            musicSource?.Dispose();
+            musicSource = source;
+            audioFormat = source.Format.CreateCopy();
+            audioFormat.PCMSize = 2;
+            recordedAudio = new RecordedAudioMixer(audioFormat);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            try
+            {
+                if (disposing) musicSource?.Dispose();
+            }
+            finally
+            {
+                base.Dispose(disposing);
+            }
+        }
+
+        internal void SetGameplayClock(WrappedClock clock, IAdjustableAudioComponent track, Func<double> offset)
+        {
+            gameplayClock = clock;
+            gameplayTrack = track;
+            gameplayOffset = offset;
+            clock.SourceStarted += () => isAudioPlayed = true;
+            clock.SourceStopped += () => isAudioPlayed = false;
+            clock.SourceAdvanced += RecordMusicInterval;
+        }
+
+        private long OutputSampleAt(double milliseconds) =>
+            Math.Max(0, checked((long)Math.Round(milliseconds * audioFormat.SampleRate / 1000.0)));
+
+        private long CurrentOutputSample => OutputSampleAt(recordClock.CurrentTime);
+
+        private void RecordMusicInterval(double outputStart, double sourceStart, double duration, double rate)
+        {
+            if (!recordingStarted || !isAudioPlayed || !isAudioPatched || rate <= 0)
+                return;
+            double frequency = gameplayTrack.AggregateFrequency.Value;
+            double tempo = rate / frequency;
+            var segment = MusicPlaybackSegment.FromClockInterval(outputStart, sourceStart, duration,
+                frequency, tempo, audioFormat.SampleRate);
+            if (segment.OutputEndSample > segment.OutputStartSample)
+                musicSegments.Add(segment);
         }
 
         public void StartRecording()
         {
             timer.Reset();
-            if (isAudioPatched && encoder is IEncoderAudioInput audioInput)
-            {
-                combinedAudioEncoder = audioInput;
-                audioInput.ConfigureAudio(audioMixer.Format.SampleRate, audioMixer.Format.Channels);
-            }
             encoder.Start();
-
-            if (isAudioPatched && combinedAudioEncoder == null)
-            {
-                var audioPath = encoder.Config.OutputPath + ".audio.aac";
-                audioEncoder = new ExternalAudioEncoder(audioPath, audioMixer.Format.SampleRate, audioMixer.Format.Channels, encoder.Config.FFmpegExec);
-                audioEncoder.Start();
-            }
-            lastAudioTime = 0;
+            recordingStarted = true;
         }
 
         public void FinishRecording()
@@ -118,7 +151,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
             try
             {
                 wrapper?.Finish(encoder);
-                MixAudioUntilCurrentTime();
+                gameplayClock?.ProcessFrame();
+                UpdateSampleVoices();
             }
             finally
             {
@@ -133,29 +167,43 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
             timer.Stop();
 
-            if (isAudioPatched && audioEncoder != null)
+            recordingStarted = false;
+            if (isAudioPatched && musicSource != null)
             {
-                audioEncoder.Finish();
-                Console.WriteLine("Muxing audio and video...");
+                Console.WriteLine("Rendering audio timeline...");
                 var sw = new Stopwatch();
                 sw.Start();
-
-                // Mux
-                var videoPath = encoder.Config.OutputPath;
-                var audioPath = audioEncoder.OutputPath;
-                var tempOutput = videoPath + ".muxed.mp4";
-
-                FFmpegAudioTools.MuxAudioVideo(videoPath, audioPath, tempOutput);
-
-                if (File.Exists(tempOutput))
+                string directory = Path.Combine(Path.GetTempPath(), $"orv-audio-{Guid.NewGuid():N}");
+                Directory.CreateDirectory(directory);
+                string extension = Path.GetExtension(encoder.Config.OutputPath);
+                string tempOutput = encoder.Config.OutputPath + $".{Guid.NewGuid():N}.muxed{extension}";
+                try
                 {
-                    File.Delete(videoPath);
-                    File.Delete(audioPath);
-                    File.Move(tempOutput, videoPath);
+                    long samples = CurrentOutputSample;
+                    string musicPath = Path.Combine(directory, "music.f32");
+                    using (musicSource)
+                        DynamicMusicRenderer.Render(musicSource, musicSegments, samples, musicPath, encoder.Config.FFmpegExec);
+                    var audioEncoder = new ExternalAudioEncoder(Path.Combine(directory, "audio.m4a"),
+                        audioFormat.SampleRate, audioFormat.Channels, encoder.Config.FFmpegExec);
+                    audioEncoder.Start();
+                    try
+                    {
+                        recordedAudio.Render(samples, musicPath, 1, audioEncoder.Write);
+                    }
+                    finally
+                    {
+                        audioEncoder.Finish();
+                    }
+                    FFmpegAudioTools.MuxAudioVideo(encoder.Config.OutputPath, audioEncoder.OutputPath, tempOutput);
+                    File.Move(tempOutput, encoder.Config.OutputPath, true);
                 }
-
+                finally
+                {
+                    if (File.Exists(tempOutput)) File.Delete(tempOutput);
+                    Directory.Delete(directory, true);
+                }
                 sw.Stop();
-                Console.WriteLine($"Muxing done in {sw.ElapsedMilliseconds}ms");
+                Console.WriteLine($"Audio rendering and muxing done in {sw.ElapsedMilliseconds}ms");
             }
 
             if (_fpsContainer.Count == 0)
@@ -174,116 +222,134 @@ namespace osu_replay_renderer_netcore.CustomHosts
         private void PrepareAudioRendering(GameSettings settings)
         {
             if (!isAudioPatched)
-            {
                 return;
-            }
-            AudioPatcher.OnTrackPlay += track =>
-            {
-                if (isAudioPlayed)
-                {
-                    return;
-                }
-                isAudioPlayed = true;
-
-                var startOffset = (track.CurrentTime / 1000f) / track.Rate;
-                Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
-
-                if (audioTrackVoice != null) audioTrackVoice.Stopped = true;
-
-                if (audioTrack is not null)
-                {
-                    audioTrackVoice = audioMixer.AddVoice(audioTrack);
-                    audioTrackVoice.Position = startOffset * audioTrack.Format.SampleRate;
-                };
-            };
-
-            AudioPatcher.OnTrackStop += track =>
-            {
-                AudioEnded();
-            };
-
-            AudioPatcher.OnTrackSeek += track =>
-            {
-                if (!isAudioPlayed)
-                {
-                    return;
-                }
-
-                var startOffset = (track.CurrentTime / 1000f) / track.Rate;
-                Console.WriteLine($"Audio Rendering: Track seek to {startOffset} at frame #{recordClock.CurrentFrame}");
-                if (audioTrackVoice != null) audioTrackVoice.Stopped = true;
-
-                if (audioTrack is not null)
-                {
-                    audioTrackVoice = audioMixer.AddVoice(audioTrack);
-                    audioTrackVoice.Position = startOffset * audioTrack.Format.SampleRate;
-                }
-            };
-
-            var registerSample = (ISample sample) =>
-            {
-                if (sample is null)
-                {
-                    return null;
-                }
-
-                // We need to get the buffer from the sample.
-                int recursionAllowed = 50;
-                while (sample is DrawableSample sample2 && recursionAllowed > 0)
-                {
-                    sample = sample2.GetUnderlaying();
-                    recursionAllowed--;
-                }
-                if (sample is SampleVirtual) return null;
-                if (!sample.IsSampleBass()) return null;
-
-                var bass = sample.AsSampleBass();
-                int sampleId = bass.SampleId;
-                if (sampleId == 0) return null;
-
-                var buff = sampleCache.Get(bass.Factory, sampleId, sample.AggregateFrequency.Value, bass.AsAudioBuffer);
-                if (buff == null) return null;
-
-                double gain = sample.AggregateVolume.Value * settings.VolumeEffects * settings.VolumeMaster;
-                var voice = audioMixer.AddVoice(buff, gain);
-                return voice;
-            };
-
+            sampleGain = settings.VolumeEffects * settings.VolumeMaster;
             AudioPatcher.OnSamplePlay += sample =>
             {
-                registerSample(sample);
+                RegisterSample(sample, false, (sample as DrawableSample)?.Clock.CurrentTime);
             };
-
-            var skinSampleVoices = new Dictionary<PoolableSkinnableSample, StreamingAudioMixer.ActiveVoice>();
+            var skinSampleVoices = new Dictionary<PoolableSkinnableSample, int>();
             AudioPatcher.OnSkinSamplePlay += skinableSample =>
             {
-                var voice = registerSample(skinableSample.Sample);
-                if (voice is not null)
-                {
-                    skinSampleVoices[skinableSample] = voice;
-                }
+                long at = SampleEventTime(skinableSample.Clock.CurrentTime);
+                if (skinSampleVoices.Remove(skinableSample, out int previous))
+                    StopSampleVoice(previous, at);
+                int voice = RegisterSample(skinableSample.Sample, skinableSample.Looping, skinableSample.Clock.CurrentTime);
+                if (voice != 0) skinSampleVoices[skinableSample] = voice;
             };
-
             AudioPatcher.OnSkinSampleStop += skinableSample =>
             {
-                if (skinSampleVoices.Remove(skinableSample, out var voice))
-                {
-                    voice.Stopped = true;
-                }
+                if (skinSampleVoices.Remove(skinableSample, out int voice))
+                    StopSampleVoice(voice, SampleEventTime(skinableSample.Clock.CurrentTime));
             };
+        }
+
+        private sealed class RecordedSampleVoice
+        {
+            public ISample Sample;
+            public long LastSample;
+            public double SourcePosition;
+            public double Rate;
+            public double Gain;
+            public int SourceLength;
+            public int SampleRate;
+            public bool Loop;
+        }
+
+        private readonly List<int> finishedSampleVoices = new();
+
+        private long SampleEventTime(double? gameplayTime)
+        {
+            long now = CurrentOutputSample;
+            if (gameplayTime == null || !isAudioPlayed || gameplayOffset == null)
+                return now;
+
+            double sourceTime = (gameplayTime.Value - gameplayOffset()) / 1000.0;
+            for (int i = musicSegments.Count - 1; i >= 0; i--)
+            {
+                var segment = musicSegments[i];
+                double rate = segment.Frequency * segment.Tempo;
+                double delta = sourceTime - segment.SourceStartSeconds;
+                double duration = (segment.OutputEndSample - segment.OutputStartSample) / (double)audioFormat.SampleRate;
+                if (delta >= -0.000001 && delta <= duration * rate + 0.000001)
+                    return Math.Clamp(segment.OutputStartSample + (long)Math.Round(delta / rate * audioFormat.SampleRate), 0, now);
+                if (i < musicSegments.Count - 2)
+                    break;
+            }
+            return now;
+        }
+
+        private int RegisterSample(ISample sample, bool loop, double? gameplayTime)
+        {
+            if (!recordingStarted || recordedAudio == null || sample == null)
+                return 0;
+            long at = SampleEventTime(gameplayTime);
+            UpdateSampleVoices(at);
+            int recursionAllowed = 50;
+            while (sample is DrawableSample drawable && recursionAllowed-- > 0)
+                sample = drawable.GetUnderlaying();
+            if (sample is SampleVirtual || !sample.IsSampleBass())
+                return 0;
+            var bass = sample.AsSampleBass();
+            if (bass.SampleId == 0)
+                return 0;
+            var buffer = sampleCache.Get(bass.Factory, bass.SampleId, 1, bass.AsAudioBuffer);
+            if (buffer == null || buffer.Samples == 0)
+                return 0;
+
+            double rate = sample.AggregateFrequency.Value * sample.AggregateTempo.Value;
+            double gain = sample.AggregateVolume.Value * sampleGain;
+            int id = recordedAudio.StartVoice(at, buffer, gain, rate, loop);
+            sampleVoices.Add(id, new RecordedSampleVoice
+            {
+                Sample = sample, LastSample = at, Rate = rate, Gain = gain,
+                SourceLength = buffer.Samples, SampleRate = buffer.Format.SampleRate, Loop = loop
+            });
+            return id;
+        }
+
+        private void StopSampleVoice(int id, long at)
+        {
+            if (sampleVoices.Remove(id, out var voice))
+                recordedAudio.StopVoice(Math.Max(at, voice.LastSample), id);
+        }
+
+        private void UpdateSampleVoices() => UpdateSampleVoices(CurrentOutputSample);
+
+        private void UpdateSampleVoices(long at)
+        {
+            foreach (var entry in sampleVoices)
+            {
+                var voice = entry.Value;
+                long position = Math.Max(at, voice.LastSample);
+                voice.SourcePosition += (position - voice.LastSample) * voice.Rate * voice.SampleRate / audioFormat.SampleRate;
+                voice.LastSample = position;
+                if (!voice.Loop && voice.SourcePosition >= voice.SourceLength)
+                {
+                    finishedSampleVoices.Add(entry.Key);
+                    continue;
+                }
+                double rate = voice.Sample.AggregateFrequency.Value * voice.Sample.AggregateTempo.Value;
+                double gain = voice.Sample.AggregateVolume.Value * sampleGain;
+                if (rate != voice.Rate || gain != voice.Gain)
+                {
+                    recordedAudio.UpdateVoice(position, entry.Key, gain, rate);
+                    voice.Rate = rate;
+                    voice.Gain = gain;
+                }
+            }
+            foreach (int id in finishedSampleVoices)
+                sampleVoices.Remove(id);
+            finishedSampleVoices.Clear();
         }
 
         public void AudioEnded()
         {
             if (!isAudioPlayed) return;
+            gameplayClock?.ProcessFrame();
             isAudioPlayed = false;
 
             Console.WriteLine($"Audio Rendering: Track stopped at frame #{recordClock.CurrentFrame}");
-            if (audioTrackVoice != null)
-            {
-                audioTrackVoice.Stopped = true;
-                audioTrackVoice = null;
-            }
         }
 
         protected override void ChooseAndSetupRenderer()
@@ -397,16 +463,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         protected override void DrawFrame()
         {
-            // Make sure we're using correct framework config
-            if (RuntimeInfo.IsApple)
-            {
-                // Retina display
-                Config.SetValue(FrameworkSetting.WindowedSize, encoder.Config.Resolution / 2);
-            }
-            else
-            {
-                Config.SetValue(FrameworkSetting.WindowedSize, encoder.Config.Resolution);
-            }
+            float scale = Window.Scale;
+            var windowSize = new Size(Math.Max(1, (int)Math.Round(encoder.Config.Resolution.Width / scale)),
+                Math.Max(1, (int)Math.Round(encoder.Config.Resolution.Height / scale)));
+            Window.MinSize = new Size(Math.Min(Window.MinSize.Width, windowSize.Width),
+                Math.Min(Window.MinSize.Height, windowSize.Height));
+            Config.SetValue(FrameworkSetting.WindowedSize, windowSize);
             Config.SetValue(FrameworkSetting.WindowMode, WindowMode.Windowed);
 
             if (!setupHostInRender)
@@ -449,28 +511,6 @@ namespace osu_replay_renderer_netcore.CustomHosts
             Console.WriteLine(FormattableString.Invariant($"Current fps: {fps:F2} (speed: {fps / encoder.Config.FPS:F2}x)"));
         }
 
-        private void MixAudioUntilCurrentTime()
-        {
-            // Audio mixing
-            if (isAudioPatched && (combinedAudioEncoder != null || audioEncoder != null))
-            {
-                double currentTime = recordClock.CurrentTime / 1000.0;
-                double deltaTime = currentTime - lastAudioTime;
-
-                if (deltaTime > 0)
-                {
-                    int samplesToMix = (int)(deltaTime * audioMixer.Format.SampleRate);
-                    if (samplesToMix > 0)
-                    {
-                        var mixedData = audioMixer.MixChunk(samplesToMix);
-                        if (combinedAudioEncoder != null) combinedAudioEncoder.WriteAudio(mixedData);
-                        else audioEncoder.Write(mixedData);
-                        lastAudioTime += (double)samplesToMix / audioMixer.Format.SampleRate;
-                    }
-                }
-            }
-        }
-
         private void OnDraw()
         {
             if (encoder is null || !encoder.CanWrite)
@@ -484,9 +524,11 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 Console.WriteLine("Render started");
             }
 
-            wrapper.WriteFrame(encoder);
+            gameplayClock?.ProcessFrame();
+            if (!wrapper.WriteFrame(encoder))
+                return;
 
-            MixAudioUntilCurrentTime();
+            UpdateSampleVoices();
 
             recordClock.CurrentFrame++;
 
