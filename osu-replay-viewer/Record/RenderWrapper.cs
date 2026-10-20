@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using osu_replay_renderer_netcore.CustomHosts.Record;
 
 namespace osu_replay_renderer_netcore.Record;
@@ -17,4 +17,5 @@ public abstract class RenderWrapper
     }
     public abstract void WriteFrame(EncoderBase encoder);
     public virtual void Finish(EncoderBase encoder) { }
+    public virtual void ReleaseResources() { }
 }

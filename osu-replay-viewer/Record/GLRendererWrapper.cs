@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.Record;
@@ -22,14 +22,15 @@ public class GLRendererWrapper : RenderWrapper
     private readonly IOpenGLGraphicsSurface openGLSurface;
 
     private int shaderProgram;
-    private int yuvFbo;
-    private int yuvTexture;
+    private int[] yuvFbos;
+    private int[] yuvTextures;
+    private int yuvIndex;
     private int sourceTexture;
     private int vao, vbo;
     private bool resourcesInitialized = false;
 
-    private int[] pboIds = new int[2];
-    private int pboIndex = 0;
+    private readonly int[] pboIds = new int[PboFrameRing.SlotCount];
+    private PboFrameRing pboRing;
     private bool pboInitialized = false;
     private int pboSize = 0;
 
@@ -94,7 +95,7 @@ public class GLRendererWrapper : RenderWrapper
         };
     }
 
-    private void InitializeResources()
+    private void InitializeResources(int textureCount)
     {
         if (resourcesInitialized) return;
 
@@ -131,18 +132,20 @@ public class GLRendererWrapper : RenderWrapper
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
 
-        // YUV Texture
-        yuvTexture = GL.GenTexture();
-        GL.BindTexture(TextureTarget.Texture2D, yuvTexture);
-        // GL_R8 = 0x8229
-        GL.TexImage2D((All)TextureTarget.Texture2D, 0, (All)0x8229, DesiredSize.Width, fboHeight, 0, (All)osuTK.Graphics.ES30.PixelFormat.Red, (All)PixelType.UnsignedByte, IntPtr.Zero);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+        yuvTextures = new int[textureCount];
+        yuvFbos = new int[textureCount];
+        for (int i = 0; i < textureCount; i++)
+        {
+            yuvTextures[i] = GL.GenTexture();
+            GL.BindTexture(TextureTarget.Texture2D, yuvTextures[i]);
+            GL.TexImage2D((All)TextureTarget.Texture2D, 0, (All)0x8229, DesiredSize.Width, fboHeight, 0, (All)osuTK.Graphics.ES30.PixelFormat.Red, (All)PixelType.UnsignedByte, IntPtr.Zero);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
 
-        // FBO
-        GL.GenFramebuffers(1, out yuvFbo);
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, yuvFbo);
-        GL.FramebufferTexture2D((All)FramebufferTarget.Framebuffer, (All)FramebufferAttachment.ColorAttachment0, (All)TextureTarget.Texture2D, yuvTexture, 0);
+            GL.GenFramebuffers(1, out yuvFbos[i]);
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, yuvFbos[i]);
+            GL.FramebufferTexture2D((All)FramebufferTarget.Framebuffer, (All)FramebufferAttachment.ColorAttachment0, (All)TextureTarget.Texture2D, yuvTextures[i], 0);
+        }
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
 
         // Quad
@@ -219,8 +222,8 @@ public class GLRendererWrapper : RenderWrapper
 
     private unsafe void WriteFrameYUV(EncoderBase encoder, Size size)
     {
-        InitializeResources();
-
+        var textureEncoder = encoder as IOpenGLTextureEncoder;
+        if (textureEncoder?.AcceptsOpenGLTexture(PixelFormat) != true) textureEncoder = null;
         var (bufferSize, fboHeight) = GetBufferSizeAndHeight();
 
         // Save state
@@ -236,89 +239,68 @@ public class GLRendererWrapper : RenderWrapper
         bool depthTestEnabled = GL.IsEnabled(EnableCap.DepthTest);
         bool cullFaceEnabled = GL.IsEnabled(EnableCap.CullFace);
 
-        // 1. Copy current framebuffer to sourceTexture
-        GL.ActiveTexture(TextureUnit.Texture0);
-        GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
-
-        // Ensure no error before we start
-        while (GL.GetError() != ErrorCode.NoError) {}
-
-        GL.CopyTexSubImage2D((All)TextureTarget.Texture2D, 0, 0, 0, 0, 0, DesiredSize.Width, DesiredSize.Height);
-
-        var err = GL.GetError();
-        if (err != ErrorCode.NoError) Console.WriteLine($"GL Error after CopyTexSubImage2D: {err}");
-
-        // 2. Render to YUV FBO
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, yuvFbo);
-
-        if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete)
+        try
         {
-             Console.WriteLine($"Framebuffer incomplete: {GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)}");
-        }
+            InitializeResources(textureEncoder == null ? 1 : Math.Clamp(textureEncoder.TextureBufferCount, 2, 3));
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, oldFbo);
+            int yuvTexture = yuvTextures[yuvIndex];
+            int yuvFbo = yuvFbos[yuvIndex];
+            textureEncoder?.PrepareOpenGLTexture(yuvTexture);
 
-        GL.Viewport(0, 0, DesiredSize.Width, fboHeight);
+            // 1. Copy current framebuffer to sourceTexture
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
 
-        GL.Disable(EnableCap.ScissorTest);
-        GL.Disable(EnableCap.Blend);
-        GL.Disable(EnableCap.DepthTest);
-        GL.Disable(EnableCap.CullFace);
-        GL.ColorMask(true, true, true, true);
+            // Ensure no error before we start
+            while (GL.GetError() != ErrorCode.NoError) {}
 
-        GL.UseProgram(shaderProgram);
+            GL.CopyTexSubImage2D((All)TextureTarget.Texture2D, 0, 0, 0, 0, 0, DesiredSize.Width, DesiredSize.Height);
 
-        GL.ActiveTexture(TextureUnit.Texture0);
-        GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
-        GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uTexture"), 0);
-        GL.Uniform2(GL.GetUniformLocation(shaderProgram, "uResolution"), (float)DesiredSize.Width, (float)DesiredSize.Height);
-        GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uPixelFormat"), GetPixelFormatUniform());
-        GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uColorSpace"), GetColorSpaceUniform());
+            var err = GL.GetError();
+            if (err != ErrorCode.NoError) Console.WriteLine($"GL Error after CopyTexSubImage2D: {err}");
 
-        GL.BindVertexArray(vao);
-        GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            // 2. Render to YUV FBO
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, yuvFbo);
 
-        if (encoder is IOpenGLTextureEncoder textureEncoder && textureEncoder.AcceptsOpenGLTexture(PixelFormat))
-        {
-            GL.Flush();
-            textureEncoder.WriteOpenGLTexture(yuvTexture, DesiredSize.Width, fboHeight, PixelFormat);
-            RestoreState(oldFbo, oldTexture, oldProgram, oldActiveTexture, oldViewport, scissorEnabled, blendEnabled, depthTestEnabled, cullFaceEnabled);
-            return;
-        }
-
-        // 3. ReadPixels
-        InitializePBOs(bufferSize);
-
-        int index = pboIndex % 2;
-        int nextIndex = (pboIndex + 1) % 2;
-
-        GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
-        GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
-        GL.ReadPixels(0, 0, DesiredSize.Width, fboHeight, osuTK.Graphics.ES30.PixelFormat.Red, PixelType.UnsignedByte, IntPtr.Zero);
-        GL.PixelStore(PixelStoreParameter.PackAlignment, 4); // Restore default
-        GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-
-        if (pboIndex > 0)
-        {
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
-            var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, bufferSize, BufferAccessMask.MapReadBit);
-
-            if (dataPtr != IntPtr.Zero)
+            if (GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) != FramebufferErrorCode.FramebufferComplete)
             {
-                try
-                {
-                    var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), bufferSize);
-                    encoder.WriteFrame(span);
-                }
-                finally
-                {
-                    GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
-                }
+                 Console.WriteLine($"Framebuffer incomplete: {GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)}");
             }
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+
+            GL.Viewport(0, 0, DesiredSize.Width, fboHeight);
+
+            GL.Disable(EnableCap.ScissorTest);
+            GL.Disable(EnableCap.Blend);
+            GL.Disable(EnableCap.DepthTest);
+            GL.Disable(EnableCap.CullFace);
+            GL.ColorMask(true, true, true, true);
+
+            GL.UseProgram(shaderProgram);
+
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, sourceTexture);
+            GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uTexture"), 0);
+            GL.Uniform2(GL.GetUniformLocation(shaderProgram, "uResolution"), (float)DesiredSize.Width, (float)DesiredSize.Height);
+            GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uPixelFormat"), GetPixelFormatUniform());
+            GL.Uniform1(GL.GetUniformLocation(shaderProgram, "uColorSpace"), GetColorSpaceUniform());
+
+            GL.BindVertexArray(vao);
+            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+
+            if (textureEncoder != null)
+            {
+                GL.Flush();
+                textureEncoder.WriteOpenGLTexture(yuvTexture, DesiredSize.Width, fboHeight, PixelFormat);
+                yuvIndex = (yuvIndex + 1) % yuvTextures.Length;
+                return;
+            }
+
+            ReadbackFrame(encoder, DesiredSize.Width, fboHeight, osuTK.Graphics.ES30.PixelFormat.Red, bufferSize);
         }
-
-        pboIndex++;
-
-        RestoreState(oldFbo, oldTexture, oldProgram, oldActiveTexture, oldViewport, scissorEnabled, blendEnabled, depthTestEnabled, cullFaceEnabled);
+        finally
+        {
+            RestoreState(oldFbo, oldTexture, oldProgram, oldActiveTexture, oldViewport, scissorEnabled, blendEnabled, depthTestEnabled, cullFaceEnabled);
+        }
     }
 
     private void RestoreState(int oldFbo, int oldTexture, int oldProgram, int oldActiveTexture, int[] oldViewport, bool scissorEnabled, bool blendEnabled, bool depthTestEnabled, bool cullFaceEnabled)
@@ -335,98 +317,104 @@ public class GLRendererWrapper : RenderWrapper
         if (cullFaceEnabled) GL.Enable(EnableCap.CullFace);
     }
 
-    private unsafe void WriteFrameRGB(EncoderBase encoder, Size size)
+    private void WriteFrameRGB(EncoderBase encoder, Size size)
     {
-        var bufferSize = DesiredSize.Width * DesiredSize.Height * 3;
+        ReadbackFrame(encoder, size.Width, size.Height, osuTK.Graphics.ES30.PixelFormat.Rgb,
+            checked(DesiredSize.Width * DesiredSize.Height * 3));
+    }
+
+    private void ReadbackFrame(EncoderBase encoder, int width, int height, osuTK.Graphics.ES30.PixelFormat format, int bufferSize)
+    {
+        GL.GetInteger(GetPName.PixelPackBufferBinding, out int oldBuffer);
+        GL.GetInteger(GetPName.PackAlignment, out int oldAlignment);
         InitializePBOs(bufferSize);
-
-        int index = pboIndex % 2;
-        int nextIndex = (pboIndex + 1) % 2;
-
-        // Read pixels into current PBO
-        GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
-        GL.ReadPixels(
-            0, 0,
-            size.Width, size.Height,
-            osuTK.Graphics.ES30.PixelFormat.Rgb,
-            PixelType.UnsignedByte,
-            IntPtr.Zero);
-        GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-
-        // Process previous PBO
-        if (pboIndex > 0)
+        try
         {
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
-            var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer,
-                IntPtr.Zero,
-                bufferSize,
-                BufferAccessMask.MapReadBit);
-
-            if (dataPtr != IntPtr.Zero)
-                try
-                {
-                    var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), bufferSize);
-                    encoder.WriteFrame(span);
-                }
-                finally
-                {
-                    GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
-                }
-            GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+            int slot = pboRing.AcquireReadSlot();
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[slot]);
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1);
+            GL.ReadPixels(0, 0, width, height, format, PixelType.UnsignedByte, IntPtr.Zero);
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, oldBuffer);
+            pboRing.CaptureCompleted(encoder);
         }
+        finally
+        {
+            GL.PixelStore(PixelStoreParameter.PackAlignment, oldAlignment);
+            GL.BindBuffer(BufferTarget.PixelPackBuffer, oldBuffer);
+        }
+    }
 
-        pboIndex++;
+    private IntPtr MapPbo(int slot)
+    {
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[slot]);
+        try
+        {
+            return GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, pboSize, BufferAccessMask.MapReadBit);
+        }
+        finally { GL.BindBuffer(BufferTarget.PixelPackBuffer, 0); }
+    }
+
+    private void UnmapPbo(int slot)
+    {
+        GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[slot]);
+        try
+        {
+            if (!GL.UnmapBuffer(BufferTarget.PixelPackBuffer))
+                throw new InvalidOperationException("OpenGL readback buffer contents became invalid");
+        }
+        finally { GL.BindBuffer(BufferTarget.PixelPackBuffer, 0); }
     }
 
     private void InitializePBOs(int size)
     {
-        if (pboInitialized && pboSize == size) return;
-
         if (pboInitialized)
         {
-            GL.DeleteBuffers(2, pboIds);
+            if (pboSize != size) throw new InvalidOperationException("Readback dimensions changed during recording");
+            return;
         }
 
-        GL.GenBuffers(2, pboIds);
-        for (int i = 0; i < 2; i++)
+        GL.GenBuffers(pboIds.Length, pboIds);
+        for (int i = 0; i < pboIds.Length; i++)
         {
             GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[i]);
             GL.BufferData(BufferTarget.PixelPackBuffer, size, IntPtr.Zero, BufferUsageHint.StreamRead);
         }
         GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
-        pboInitialized = true;
         pboSize = size;
+        pboRing = new PboFrameRing(size, MapPbo, UnmapPbo);
+        pboInitialized = true;
     }
 
-    public override unsafe void Finish(EncoderBase encoder)
+    public override void Finish(EncoderBase encoder)
     {
-        if (!pboInitialized) return;
+        if (pboInitialized) WithGLContext(() => pboRing.Finish(encoder));
+    }
 
+    public override void ReleaseResources()
+    {
+        if (!pboInitialized && !resourcesInitialized) return;
         WithGLContext(() =>
         {
-            // Process the last frame if any
-            if (pboIndex > 0)
+            try { pboRing?.ReleaseMappings(); }
+            finally
             {
-                int pendingIndex = (pboIndex - 1) % 2;
-                GL.BindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
-                var dataPtr = GL.MapBufferRange(BufferTarget.PixelPackBuffer, IntPtr.Zero, pboSize, BufferAccessMask.MapReadBit);
-                if (dataPtr != IntPtr.Zero)
+                if (pboInitialized)
                 {
-                    try
-                    {
-                        var span = new ReadOnlySpan<byte>(dataPtr.ToPointer(), pboSize);
-                        encoder.WriteFrame(span);
-                    }
-                    finally
-                    {
-                        GL.UnmapBuffer(BufferTarget.PixelPackBuffer);
-                    }
+                    GL.DeleteBuffers(pboIds.Length, pboIds);
+                    pboInitialized = false;
+                    pboRing = null;
                 }
-                GL.BindBuffer(BufferTarget.PixelPackBuffer, 0);
+                if (resourcesInitialized)
+                {
+                    GL.DeleteFramebuffers(yuvFbos.Length, yuvFbos);
+                    GL.DeleteTextures(yuvTextures.Length, yuvTextures);
+                    GL.DeleteTextures(1, new[] { sourceTexture });
+                    GL.DeleteBuffers(1, new[] { vbo });
+                    GL.DeleteVertexArrays(1, new[] { vao });
+                    GL.DeleteProgram(shaderProgram);
+                    resourcesInitialized = false;
+                }
             }
-
-            GL.DeleteBuffers(2, pboIds);
-            pboInitialized = false;
         });
     }
 }

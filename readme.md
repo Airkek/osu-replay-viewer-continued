@@ -157,6 +157,74 @@ Here is the table for hardware encoders:
 | NVIDIA | hevc_nvenc        | HEVC  |          |
 | Apple  | hevc_videotoolbox | HEVC  |          |
 
+### Encoder settings
+
+The default recording settings remain `libx264`, preset `slow`, CRF 21. NVENC uses CQP 21 unless another rate-control mode is selected. The following `ffmpeg_options` settings are optional:
+
+| Setting | Meaning |
+|---------|---------|
+| `video_rate_control` | `ConstantQuantizer`, `ConstantQuality`, `VariableBitrate`, or `ConstantBitrate`; omit or use `null` to keep the encoder defaults above |
+| `video_quality` | Quality for CQP/CQ modes; the scale depends on the codec (QP/CRF/CQ/ICQ, or VideoToolbox 0–100) |
+| `video_encoder_bitrate` | Target bitrate for explicitly selected VBR/CBR, for example `20M`; it does not limit CQP |
+| `video_encoder_max_bitrate` | Optional maximum bitrate for CQ/VBR |
+| `video_encoder_buffer_size` | Optional bitrate-control buffer size, for example `40M` |
+
+Lower QP/CRF values generally mean higher quality; VideoToolbox uses higher values for higher quality. Values from different encoders are not equivalent. Do not combine `video_quality` with VBR/CBR, or bitrate limits with CQP. Unsupported private encoder options are rejected before recording, and presets are passed only to encoders that support them.
+
+For example, this explicitly selects 20 Mbit/s VBR for an NVIDIA Pipe recording at 720p60 with YUV420 input. Speed and visual quality depend on the FFmpeg build, driver, and workload:
+
+```json
+{
+  "record_options": {
+    "fps": 60,
+    "resolution": "1280x720"
+  },
+  "ffmpeg_options": {
+    "mode": "Pipe",
+    "ffmpeg_executable": "ffmpeg",
+    "video_encoder": "h264_nvenc",
+    "video_encoder_preset": "slow",
+    "video_rate_control": "VariableBitrate",
+    "video_encoder_bitrate": "20M",
+    "video_encoder_max_bitrate": "30M",
+    "video_encoder_buffer_size": "40M"
+  },
+  "output_options": {
+    "pixel_format": "YUV420"
+  }
+}
+```
+
+### Audio and video recording
+
+Pipe mode uses one external FFmpeg process to encode and mux video and AAC audio directly into the output file. It does not create a temporary audio file or run a final remux pass. Video and PCM audio use separate bounded inputs over loopback TCP; both endpoints are inside the same host/container, so Docker ports do not need to be published.
+
+Pipe mode needs an FFmpeg executable with TCP input, AAC encoding, and the selected video encoder. It does not require FFmpeg shared DLLs/`.so` files or `libraries_path`; those are for Binding mode. Existing renderer and GPU driver requirements still apply. Binding encoders also mux audio directly; the separate audio encoder/remux remains a fallback for encoders without integrated audio input.
+
+### Encoder regression checks
+
+Run the managed queue, ownership, and option checks with .NET 10:
+
+```sh
+dotnet run --project osu-replay-viewer.Tests -c Release
+```
+
+Set `ORV_FFMPEG` to also run real software-encoder round trips and combined audio/video checks, including high-FPS startup, short clips, paths with spaces, and process failures:
+
+```sh
+ORV_FFMPEG=/path/to/ffmpeg dotnet run --project osu-replay-viewer.Tests -c Release
+```
+
+These checks use `libx264` and AAC and do not validate NVENC, QSV, AMF, or VideoToolbox hardware performance or visual equivalence.
+
+The optional production-profile check records 120 frames at 1280×720/60 fps with YUV420, the `slow` preset, default NVENC CQP 21, and 48 kHz stereo audio. It checks decoded frame/audio lengths and a shared audio/video timing marker. Run it inside the existing NVIDIA-enabled Docker container:
+
+```sh
+ORV_FFMPEG=/usr/bin/ffmpeg ORV_HARDWARE_ENCODER=h264_nvenc ORV_HARDWARE_PRESET=p7 dotnet run --project osu-replay-viewer.Tests -c Release
+```
+
+The hardware check reports an explicit skip when `ORV_HARDWARE_ENCODER` is unset. It needs the selected encoder and GPU access in the container; no additional published ports or FFmpeg shared libraries are required for Pipe mode.
+
 ## Planned
 This is the list of stuffs that I want to changes. It can be planned features or just revamp the code.
 

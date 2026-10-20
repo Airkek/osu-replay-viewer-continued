@@ -46,25 +46,26 @@ namespace osu_replay_renderer_netcore.CustomHosts
         protected override IFrameBasedClock SceneGraphClock => recordClock;
         protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => CrossPlatform.GetWindow(preferredSurface, Name);
         protected override IEnumerable<InputHandler> CreateAvailableInputHandlers() => [];
-        
+
         private readonly RecordClock recordClock;
         private readonly Stopwatch timer = new();
 
         private readonly EncoderBase encoder;
-        
+
         private readonly bool isFinishFramePatched;
         private readonly bool isAudioPatched;
-        
+
         private StreamingAudioMixer audioMixer = new(new AudioFormat { Channels = 2, PCMSize = 2 });
         private readonly SamplePcmCache sampleCache = new();
         private ExternalAudioEncoder audioEncoder;
+        private IEncoderAudioInput combinedAudioEncoder;
         private double lastAudioTime = 0;
 
         private AudioBuffer audioTrack = null;
         private StreamingAudioMixer.ActiveVoice audioTrackVoice = null;
         private bool isAudioPlayed = false;
         public bool NeedAudio => isAudioPatched && audioTrack is null;
-        
+
         private readonly GlRenderer rendererType;
         private RenderWrapper wrapper;
 
@@ -73,7 +74,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             this.encoder = encoder;
             isFinishFramePatched = patchesApplied;
             isAudioPatched = patchesApplied;
-            
+
             this.recordClock = recordClock;
             this.rendererType = rendererType;
 
@@ -96,21 +97,40 @@ namespace osu_replay_renderer_netcore.CustomHosts
         public void StartRecording()
         {
             timer.Reset();
+            if (isAudioPatched && encoder is IEncoderAudioInput audioInput)
+            {
+                combinedAudioEncoder = audioInput;
+                audioInput.ConfigureAudio(audioMixer.Format.SampleRate, audioMixer.Format.Channels);
+            }
             encoder.Start();
-            
-            if (isAudioPatched)
+
+            if (isAudioPatched && combinedAudioEncoder == null)
             {
                 var audioPath = encoder.Config.OutputPath + ".audio.aac";
                 audioEncoder = new ExternalAudioEncoder(audioPath, audioMixer.Format.SampleRate, audioMixer.Format.Channels, encoder.Config.FFmpegExec);
                 audioEncoder.Start();
-                lastAudioTime = 0;
             }
+            lastAudioTime = 0;
         }
 
         public void FinishRecording()
         {
-            wrapper?.Finish(encoder);
-            encoder.Finish();
+            try
+            {
+                wrapper?.Finish(encoder);
+                MixAudioUntilCurrentTime();
+            }
+            finally
+            {
+                try
+                {
+                    encoder.Finish();
+                }
+                finally
+                {
+                    wrapper?.ReleaseResources();
+                }
+            }
             timer.Stop();
 
             if (isAudioPatched && audioEncoder != null)
@@ -119,25 +139,30 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 Console.WriteLine("Muxing audio and video...");
                 var sw = new Stopwatch();
                 sw.Start();
-                
+
                 // Mux
                 var videoPath = encoder.Config.OutputPath;
                 var audioPath = audioEncoder.OutputPath;
                 var tempOutput = videoPath + ".muxed.mp4";
-                
+
                 FFmpegAudioTools.MuxAudioVideo(videoPath, audioPath, tempOutput);
-                
+
                 if (File.Exists(tempOutput))
                 {
                     File.Delete(videoPath);
                     File.Delete(audioPath);
                     File.Move(tempOutput, videoPath);
                 }
-                
+
                 sw.Stop();
                 Console.WriteLine($"Muxing done in {sw.ElapsedMilliseconds}ms");
             }
 
+            if (_fpsContainer.Count == 0)
+            {
+                Console.WriteLine($"Render finished in {timer.Elapsed:g}. Frames: {recordClock.CurrentFrame}");
+                return;
+            }
             _fpsContainer.Sort();
             var medianFps = _fpsContainer[_fpsContainer.Count / 2];
             var minFps = _fpsContainer[0];
@@ -162,9 +187,9 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
                 var startOffset = (track.CurrentTime / 1000f) / track.Rate;
                 Console.WriteLine($"Audio Rendering: Track played at frame #{recordClock.CurrentFrame}");
-                
+
                 if (audioTrackVoice != null) audioTrackVoice.Stopped = true;
-                
+
                 if (audioTrack is not null)
                 {
                     audioTrackVoice = audioMixer.AddVoice(audioTrack);
@@ -223,12 +248,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 var voice = audioMixer.AddVoice(buff, gain);
                 return voice;
             };
-            
+
             AudioPatcher.OnSamplePlay += sample =>
             {
                 registerSample(sample);
             };
-            
+
             var skinSampleVoices = new Dictionary<PoolableSkinnableSample, StreamingAudioMixer.ActiveVoice>();
             AudioPatcher.OnSkinSamplePlay += skinableSample =>
             {
@@ -252,7 +277,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
         {
             if (!isAudioPlayed) return;
             isAudioPlayed = false;
-                
+
             Console.WriteLine($"Audio Rendering: Track stopped at frame #{recordClock.CurrentFrame}");
             if (audioTrackVoice != null)
             {
@@ -279,7 +304,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 }
                 else
                 {
-                    // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook 
+                    // Veldrid works faster on my Windows pc and Legacy is the best on my linux server and macbook
                     switch (RuntimeInfo.OS)
                     {
                         case RuntimeInfo.Platform.Windows:
@@ -296,7 +321,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
 
             string rendererStr;
-            
+
             switch (type)
             {
                 case GlRenderer.Veldrid:
@@ -320,7 +345,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 Console.Error.WriteLine($"Cannot create wrapper for renderer: {Renderer.GetType()}");
                 Exit();
             }
-            
+
             Console.WriteLine($"Created '{type}' renderer. Type: {Renderer.GetType()}, wrapper: {wrapper.GetType()}");
         }
 
@@ -366,12 +391,12 @@ namespace osu_replay_renderer_netcore.CustomHosts
         {
             PropertyInfo rootProperty = typeof(DesktopGameHost).GetProperty("Root", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             MethodInfo getter = rootProperty.GetGetMethod(nonPublic: true);
-            
+
             return getter.Invoke(this, null) as Container;
         }
 
         protected override void DrawFrame()
-        {            
+        {
             // Make sure we're using correct framework config
             if (RuntimeInfo.IsApple)
             {
@@ -383,7 +408,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 Config.SetValue(FrameworkSetting.WindowedSize, encoder.Config.Resolution);
             }
             Config.SetValue(FrameworkSetting.WindowMode, WindowMode.Windowed);
-            
+
             if (!setupHostInRender)
             {
                 setupHostInRender = true;
@@ -415,7 +440,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
             var diffTime = timer.ElapsedMilliseconds - _lastFpsPrintTime;
             var diffFrames = recordClock.CurrentFrame - _lastFrameCount;
-            
+
             _lastFpsPrintTime = timer.ElapsedMilliseconds;
             _lastFrameCount = recordClock.CurrentFrame;
 
@@ -423,14 +448,36 @@ namespace osu_replay_renderer_netcore.CustomHosts
             _fpsContainer.Add(fps);
             Console.WriteLine(FormattableString.Invariant($"Current fps: {fps:F2} (speed: {fps / encoder.Config.FPS:F2}x)"));
         }
-        
+
+        private void MixAudioUntilCurrentTime()
+        {
+            // Audio mixing
+            if (isAudioPatched && (combinedAudioEncoder != null || audioEncoder != null))
+            {
+                double currentTime = recordClock.CurrentTime / 1000.0;
+                double deltaTime = currentTime - lastAudioTime;
+
+                if (deltaTime > 0)
+                {
+                    int samplesToMix = (int)(deltaTime * audioMixer.Format.SampleRate);
+                    if (samplesToMix > 0)
+                    {
+                        var mixedData = audioMixer.MixChunk(samplesToMix);
+                        if (combinedAudioEncoder != null) combinedAudioEncoder.WriteAudio(mixedData);
+                        else audioEncoder.Write(mixedData);
+                        lastAudioTime += (double)samplesToMix / audioMixer.Format.SampleRate;
+                    }
+                }
+            }
+        }
+
         private void OnDraw()
         {
             if (encoder is null || !encoder.CanWrite)
             {
                 return;
             }
-                
+
             if (!timer.IsRunning)
             {
                 timer.Start();
@@ -438,24 +485,8 @@ namespace osu_replay_renderer_netcore.CustomHosts
             }
 
             wrapper.WriteFrame(encoder);
-            
-            // Audio mixing
-            if (isAudioPatched && audioEncoder != null)
-            {
-                double currentTime = recordClock.CurrentTime / 1000.0;
-                double deltaTime = currentTime - lastAudioTime;
-                
-                if (deltaTime > 0)
-                {
-                    int samplesToMix = (int)(deltaTime * audioMixer.Format.SampleRate);
-                    if (samplesToMix > 0)
-                    {
-                        var mixedData = audioMixer.MixChunk(samplesToMix);
-                        audioEncoder.Write(mixedData);
-                        lastAudioTime += (double)samplesToMix / audioMixer.Format.SampleRate;
-                    }
-                }
-            }
+
+            MixAudioUntilCurrentTime();
 
             recordClock.CurrentFrame++;
 

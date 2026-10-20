@@ -7,14 +7,15 @@ using System.Threading.Tasks;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record;
 
-public sealed class QueuedEncoder : EncoderBase, IDisposable
+public sealed class QueuedEncoder : EncoderBase, IDisposable, IOwnedFrameEncoder, IEncoderAudioInput
 {
     private readonly EncoderBase encoder;
     private readonly int capacity;
     private readonly int frameSize;
     private readonly ArrayPool<byte> bufferPool;
     private BlockingCollection<byte[]> availableBuffers;
-    private BlockingCollection<byte[]> pendingFrames;
+    private BlockingCollection<IFrameLease> pendingFrames;
+    private SemaphoreSlim slots;
     private CancellationTokenSource cancellation;
     private Task worker;
     private volatile ExceptionDispatchInfo failure;
@@ -52,6 +53,28 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
         }
     }
 
+    public void ConfigureAudio(int sampleRate, int channels)
+    {
+        lock (WriteLocker)
+        {
+            if (started)
+                throw new InvalidOperationException("Configure audio before starting the encoder");
+            if (encoder is not IEncoderAudioInput audio)
+                throw new NotSupportedException("The wrapped encoder does not accept audio");
+            audio.ConfigureAudio(sampleRate, channels);
+        }
+    }
+
+    public void WriteAudio(ReadOnlySpan<byte> pcm)
+    {
+        failure?.Throw();
+        if (!CanWrite)
+            throw new InvalidOperationException("The encoder is not recording");
+        if (encoder is not IEncoderAudioInput audio)
+            throw new NotSupportedException("The wrapped encoder does not accept audio");
+        audio.WriteAudio(pcm);
+    }
+
     protected override void _startInternal()
     {
         if (started)
@@ -61,11 +84,9 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
         {
             encoder.Start();
             availableBuffers = new BlockingCollection<byte[]>(capacity);
-            pendingFrames = new BlockingCollection<byte[]>(capacity);
+            pendingFrames = new BlockingCollection<IFrameLease>(capacity);
+            slots = new SemaphoreSlim(capacity, capacity);
             cancellation = new CancellationTokenSource();
-            for (int i = 0; i < capacity; i++)
-                availableBuffers.Add(bufferPool.Rent(frameSize));
-
             worker = Task.Factory.StartNew(ConsumeFrames, CancellationToken.None,
                 TaskCreationOptions.LongRunning, TaskScheduler.Default);
             started = true;
@@ -91,12 +112,18 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
             throw new ArgumentException($"Expected a {frameSize}-byte frame, received {frame.Length}", nameof(frame));
 
         byte[] buffer = null;
+        bool acquired = false;
         try
         {
-            buffer = availableBuffers.Take(cancellation.Token);
+            slots.Wait(cancellation.Token);
+            acquired = true;
+            failure?.Throw();
+            if (!availableBuffers.TryTake(out buffer))
+                buffer = bufferPool.Rent(frameSize);
             frame.CopyTo(buffer);
-            pendingFrames.Add(buffer, cancellation.Token);
+            pendingFrames.Add(new PooledFrameLease(buffer, frameSize, availableBuffers), cancellation.Token);
             buffer = null;
+            acquired = false;
         }
         catch (OperationCanceledException)
         {
@@ -107,6 +134,41 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
         {
             if (buffer != null)
                 availableBuffers.Add(buffer);
+            if (acquired)
+                slots.Release();
+        }
+    }
+
+    public void WriteFrame(IFrameLease frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        bool acquired = false;
+        try
+        {
+            lock (WriteLocker)
+            {
+                if (!CanWrite)
+                    return;
+                if (frame.Data.Length != frameSize)
+                    throw new ArgumentException($"Expected a {frameSize}-byte frame, received {frame.Data.Length}", nameof(frame));
+                slots.Wait(cancellation.Token);
+                acquired = true;
+                failure?.Throw();
+                pendingFrames.Add(frame, cancellation.Token);
+                frame = null;
+                acquired = false;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            failure?.Throw();
+            throw;
+        }
+        finally
+        {
+            frame?.Dispose();
+            if (acquired)
+                slots.Release();
         }
     }
 
@@ -114,23 +176,24 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
     {
         try
         {
-            foreach (var buffer in pendingFrames.GetConsumingEnumerable())
+            foreach (var frame in pendingFrames.GetConsumingEnumerable())
             {
                 try
                 {
                     if (!encoder.CanWrite)
                         throw new InvalidOperationException("The encoder stopped accepting frames");
-                    encoder.WriteFrame(buffer.AsSpan(0, frameSize));
+                    encoder.WriteFrame(frame.Data);
                 }
                 catch (Exception exception)
                 {
                     failure = ExceptionDispatchInfo.Capture(exception);
                     cancellation.Cancel();
-                    return;
+                    throw;
                 }
                 finally
                 {
-                    availableBuffers.Add(buffer);
+                    try { frame.Dispose(); }
+                    finally { slots.Release(); }
                 }
             }
         }
@@ -141,8 +204,11 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
         }
         finally
         {
-            while (pendingFrames.TryTake(out var buffer))
-                availableBuffers.Add(buffer);
+            while (pendingFrames.TryTake(out var frame))
+            {
+                frame.Dispose();
+                slots.Release();
+            }
         }
     }
 
@@ -194,8 +260,32 @@ public sealed class QueuedEncoder : EncoderBase, IDisposable
 
         pendingFrames?.Dispose();
         pendingFrames = null;
+        slots?.Dispose();
+        slots = null;
         cancellation?.Dispose();
         cancellation = null;
+    }
+
+    private sealed class PooledFrameLease : IFrameLease
+    {
+        private byte[] buffer;
+        private readonly int length;
+        private readonly BlockingCollection<byte[]> available;
+
+        public PooledFrameLease(byte[] buffer, int length, BlockingCollection<byte[]> available)
+        {
+            this.buffer = buffer;
+            this.length = length;
+            this.available = available;
+        }
+
+        public ReadOnlySpan<byte> Data => buffer.AsSpan(0, length);
+        public void Dispose()
+        {
+            var returned = Interlocked.Exchange(ref buffer, null);
+            if (returned != null)
+                available.Add(returned);
+        }
     }
 
     public void Dispose() => Finish();

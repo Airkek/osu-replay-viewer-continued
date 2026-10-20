@@ -5,16 +5,21 @@ using System.Collections.Generic;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record
 {
-    public unsafe class FFmpegAutoGenEncoder : EncoderBase
+    public unsafe class FFmpegAutoGenEncoder : EncoderBase, IEncoderAudioInput
     {
         private AVFormatContext* _formatContext;
         private AVCodecContext* _codecContext;
         private SwsContext* _swsContext;
         private AVStream* _videoStream;
         private AVFrame* _frame;
+        private AVPacket* videoPacket;
+        private EncoderPacketPump packetPump;
         private int _pts;
         private long _bitrate;
         private bool _headerWritten;
+        private NativeAudioMuxer audioMuxer;
+        private int audioSampleRate;
+        private int audioChannels;
 
         public override bool CanWrite => _formatContext != null && _formatContext->pb != null;
 
@@ -26,6 +31,26 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             }
         }
 
+
+        public void ConfigureAudio(int sampleRate, int channels)
+        {
+            lock (WriteLocker)
+            {
+                if (_formatContext != null) throw new InvalidOperationException("Configure audio before starting the encoder");
+                if (sampleRate <= 0 || channels < 1 || channels > 8) throw new ArgumentOutOfRangeException(nameof(sampleRate));
+                audioSampleRate = sampleRate;
+                audioChannels = channels;
+            }
+        }
+
+        public void WriteAudio(ReadOnlySpan<byte> pcm)
+        {
+            lock (WriteLocker)
+            {
+                if (audioMuxer == null) throw new InvalidOperationException("The encoder has no audio stream");
+                audioMuxer.Write(pcm);
+            }
+        }
 
         private byte[] _pixelBuffer;
         protected override void _startInternal()
@@ -65,6 +90,10 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             _codecContext->framerate = new AVRational { num = Config.FPS, den = 1 };
             _codecContext->pix_fmt = GetAVPixelFormat(Config.PixelFormat);
             _codecContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
+            _videoStream->time_base = _codecContext->time_base;
+            _videoStream->avg_frame_rate = _codecContext->framerate;
+            if ((_formatContext->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0)
+                _codecContext->flags |= ffmpeg.AV_CODEC_FLAG_GLOBAL_HEADER;
 
             // Set color metadata for YUV formats
             if (Config.PixelFormat != PixelFormatMode.RGB)
@@ -86,32 +115,10 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
             Console.WriteLine($"[FFmpegAutoGenEncoder] Pixel format: {Config.PixelFormat} -> {_codecContext->pix_fmt}, Color space: {Config.ColorSpace}");
 
-            // Set encoder options
-            var dict = new Dictionary<string, string>();
-            dict["preset"] = Config.Preset;
-            switch (Config.Encoder)
-            {
-                case "h264_nvenc":
-                    dict["rc"] = "constqp";
-                    dict["qp"] = "21";
-                    break;
-                case "libx264":
-                case "h264_amf":
-                case "h264_qsv":
-                case "h264_videotoolbox":
-                    dict["crf"] = "21";
-                    break;
-            }
-
-            // Convert options to AVDictionary
-            AVDictionary* opts = null;
-            foreach (var pair in dict)
-            {
-                ffmpeg.av_dict_set(&opts, pair.Key, pair.Value, 0);
-            }
+            NativeEncoderSettings.Apply(_codecContext, Config);
 
             // Open codec
-            if (ffmpeg.avcodec_open2(_codecContext, codec, &opts) < 0)
+            if (ffmpeg.avcodec_open2(_codecContext, codec, null) < 0)
                 throw new InvalidOperationException("Failed to open codec");
 
             // Copy params to stream
@@ -133,9 +140,18 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                     ffmpeg.SWS_POINT, null, null, null);
             }
 
+            videoPacket = ffmpeg.av_packet_alloc();
+            if (videoPacket == null) throw new OutOfMemoryException("Could not allocate the video packet");
+            packetPump = new EncoderPacketPump(
+                pointer => ffmpeg.avcodec_send_frame(_codecContext, (AVFrame*)pointer),
+                ReceiveVideoPackets, CheckVideo, ffmpeg.AVERROR(ffmpeg.EAGAIN), ffmpeg.AVERROR_EOF);
+
             // Open output file
             if (ffmpeg.avio_open(&_formatContext->pb, Config.OutputPath, ffmpeg.AVIO_FLAG_WRITE) < 0)
                 throw new InvalidOperationException("Could not open output file");
+
+            if (audioSampleRate > 0)
+                audioMuxer = new NativeAudioMuxer(_formatContext, audioSampleRate, audioChannels);
 
             // Write header
             if (ffmpeg.avformat_write_header(_formatContext, null) < 0)
@@ -153,6 +169,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
         {
+            CheckVideo(ffmpeg.av_frame_make_writable(_frame));
             fixed (byte* framePtr = frame)
             {
                 if (Config.PixelFormat == PixelFormatMode.RGB)
@@ -188,36 +205,44 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                     CopyNV12(framePtr);
                 }
 
-                _frame->pts = _pts++;
+                _frame->pts = _pts;
+                packetPump.Send((IntPtr)_frame);
+                _pts++;
+            }
+        }
 
-                // Send frame to encoder
-                int ret = ffmpeg.avcodec_send_frame(_codecContext, _frame);
-                if (ret < 0)
-                    throw new InvalidOperationException("Failed to send frame");
-
-                // Receive packets
-                AVPacket* packet = ffmpeg.av_packet_alloc();
+        private (int Count, int State) ReceiveVideoPackets()
+        {
+            int count = 0;
+            while (true)
+            {
+                int status = ffmpeg.avcodec_receive_packet(_codecContext, videoPacket);
+                if (status == ffmpeg.AVERROR(ffmpeg.EAGAIN) || status == ffmpeg.AVERROR_EOF)
+                    return (count, status);
+                CheckVideo(status);
                 try
                 {
-                    while (true)
-                    {
-                        ret = ffmpeg.avcodec_receive_packet(_codecContext, packet);
-                        if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) || ret == ffmpeg.AVERROR_EOF)
-                            break;
-                        if (ret < 0)
-                            throw new InvalidOperationException("Error during encoding");
-
-                        ffmpeg.av_packet_rescale_ts(packet, _codecContext->time_base, _videoStream->time_base);
-                        packet->stream_index = _videoStream->index;
-                        ffmpeg.av_interleaved_write_frame(_formatContext, packet);
-                        ffmpeg.av_packet_unref(packet);
-                    }
+                    // Preserve the final CFR sample when the encoder omits its duration
+                    if (videoPacket->duration <= 0)
+                        videoPacket->duration = 1;
+                    ffmpeg.av_packet_rescale_ts(videoPacket, _codecContext->time_base, _videoStream->time_base);
+                    videoPacket->stream_index = _videoStream->index;
+                    CheckVideo(ffmpeg.av_interleaved_write_frame(_formatContext, videoPacket));
+                    count++;
                 }
                 finally
                 {
-                    ffmpeg.av_packet_free(&packet);
+                    ffmpeg.av_packet_unref(videoPacket);
                 }
             }
+        }
+
+        private static void CheckVideo(int status)
+        {
+            if (status >= 0) return;
+            byte* message = stackalloc byte[256];
+            ffmpeg.av_strerror(status, message, 256);
+            throw new System.IO.IOException($"Video encoder failed: {System.Runtime.InteropServices.Marshal.PtrToStringAnsi((IntPtr)message)}");
         }
 
         private void CopyYUV420P(byte* srcPtr)
@@ -319,37 +344,24 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
         {
             try
             {
-                if (_codecContext != null && ffmpeg.avcodec_is_open(_codecContext) != 0)
-                {
-                    // Flush encoder before releasing its buffers
-                    ffmpeg.avcodec_send_frame(_codecContext, null);
-                    AVPacket* packet = ffmpeg.av_packet_alloc();
-                    try
-                    {
-                        while (ffmpeg.avcodec_receive_packet(_codecContext, packet) >= 0)
-                        {
-                            ffmpeg.av_packet_rescale_ts(packet, _codecContext->time_base, _videoStream->time_base);
-                            packet->stream_index = _videoStream->index;
-                            ffmpeg.av_interleaved_write_frame(_formatContext, packet);
-                            ffmpeg.av_packet_unref(packet);
-                        }
-                    }
-                    finally
-                    {
-                        ffmpeg.av_packet_free(&packet);
-                    }
-                }
-
                 if (_headerWritten)
-                    ffmpeg.av_write_trailer(_formatContext);
+                    packetPump.Send(IntPtr.Zero);
+
+                if (_headerWritten) audioMuxer?.Finish();
+                if (_headerWritten && ffmpeg.av_write_trailer(_formatContext) < 0)
+                    throw new InvalidOperationException("Could not finalize the output container");
             }
             finally
             {
+                audioMuxer?.Dispose();
+                audioMuxer = null;
                 if (_pixelBuffer is not null)
                 {
                     ArrayPool<byte>.Shared.Return(_pixelBuffer);
                     _pixelBuffer = null;
                 }
+                fixed (AVPacket** packet = &videoPacket) ffmpeg.av_packet_free(packet);
+                packetPump = null;
                 fixed (AVCodecContext** ctx = &_codecContext) ffmpeg.avcodec_free_context(ctx);
                 fixed (AVFrame** frame = &_frame) ffmpeg.av_frame_free(frame);
                 if (_swsContext != null) ffmpeg.sws_freeContext(_swsContext);
