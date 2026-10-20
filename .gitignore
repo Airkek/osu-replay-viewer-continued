@@ -389,3 +389,6 @@ FodyWeavers.xsd
 
 # Macos
 .DS_STORE
+
+# Local viewer settings may contain osu! API credentials
+osu-replay-viewer-config.json

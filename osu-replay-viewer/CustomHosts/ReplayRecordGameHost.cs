@@ -1,4 +1,5 @@
 using osu.Framework;
+using osu.Framework.Bindables;
 using osu.Framework.Configuration;
 using osu.Framework.Input.Handlers;
 using osu.Framework.Logging;
@@ -47,6 +48,21 @@ namespace osu_replay_renderer_netcore.CustomHosts
         protected override IFrameBasedClock SceneGraphClock => recordClock;
         protected override IWindow CreateWindow(GraphicsSurfaceType preferredSurface) => CrossPlatform.GetWindow(preferredSurface, Name);
         protected override IEnumerable<InputHandler> CreateAvailableInputHandlers() => [];
+
+        private readonly Bindable<ExecutionMode> executionMode = new(ExecutionMode.SingleThread);
+
+        protected override void SetupConfig(IDictionary<FrameworkSetting, object> defaultOverrides)
+        {
+            defaultOverrides[FrameworkSetting.ExecutionMode] = ExecutionMode.SingleThread;
+            base.SetupConfig(defaultOverrides);
+
+            Config.BindWith(FrameworkSetting.ExecutionMode, executionMode);
+            executionMode.BindValueChanged(mode =>
+            {
+                if (mode.NewValue != ExecutionMode.SingleThread)
+                    executionMode.Value = ExecutionMode.SingleThread;
+            }, true);
+        }
 
         private readonly RecordClock recordClock;
         private readonly Stopwatch timer = new();

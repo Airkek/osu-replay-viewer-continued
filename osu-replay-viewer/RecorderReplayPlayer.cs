@@ -1,9 +1,11 @@
 ﻿using osu.Framework.Screens;
 using osu.Game.Rulesets.Mods;
+using osu.Game.Online.Leaderboards;
 using osu.Game.Scoring;
 using osu.Game.Screens.Play;
 using System;
 using System.Linq;
+using osu_replay_renderer_netcore.Online;
 
 namespace osu_replay_renderer_netcore
 {
@@ -13,7 +15,9 @@ namespace osu_replay_renderer_netcore
         public bool ManipulateClock { get; set; } = false;
         public bool HideOverlays { get; private set; } = false;
 
-        public RecorderReplayPlayer(Score score, bool hideOverlays, bool skipIntro) : base(score, new PlayerConfiguration
+        private readonly LeaderboardScores leaderboard;
+
+        public RecorderReplayPlayer(Score score, bool hideOverlays, bool skipIntro, LeaderboardScores leaderboard = null) : base(score, new PlayerConfiguration
         {
             AllowRestart = false,
             AllowPause = false,
@@ -25,6 +29,8 @@ namespace osu_replay_renderer_netcore
         {
             GivenScore = score;
             HideOverlays = hideOverlays;
+            this.leaderboard = leaderboard;
+            Configuration.ShowLeaderboard = leaderboard != null;
         }
 
         public Action OnFailed;
@@ -53,6 +59,9 @@ namespace osu_replay_renderer_netcore
             base.LoadComplete();
             HUDOverlay.ShowHud.Value = false;
             HUDOverlay.HoldToQuit.Hide();
+
+            if (leaderboard != null)
+                GameplayClockContainer.Add(new ReplayLeaderboard(leaderboard, GameplayState));
 
             if (HideOverlays)
             {

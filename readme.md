@@ -16,8 +16,17 @@ to upgrade to make UI matches with actual game
 
 ## Features
 - View downloaded replays (now with custom skins support)
-- Download replays (if you can log in)
 - Render replays to video file (FFmpeg required)
+- Show the online beatmap leaderboard during replay viewing and recording
+- Download replays through osu! API v2 using application credentials
+
+Recording always uses SingleThread execution to preserve replay simulation accuracy.
+MultiThreaded settings in `framework.ini` or runtime changes are ignored while recording.
+Replay viewing keeps the configured execution mode.
+
+Replay viewing and recording do not log in to osu!, including with `--osu-mode`. Saved osu!lazer
+login credentials are not used or cleared. `--view online <score ID>` selects an already downloaded
+replay from local storage by its online score ID.
 
 ## Basic Usage
 - [ ] TODO
@@ -78,7 +87,7 @@ Usage:
     List Replays
     List all local replays
 
-  --view                   <Type (local/online/file/auto)> <Score GUID/Beatmap ID (auto)/File.osr>
+  --view                   <Type (local/online/file/auto/api)> <Score GUID/Beatmap ID (auto)/File.osr>
     Alternatives: -view, -i
     View Replay
     Select a replay to view. This options must be always present (excluding -list options)
@@ -118,6 +127,64 @@ Usage:
     List Skins
     List all available skins
 ```
+
+## Leaderboard during replays
+
+Register an [osu! OAuth application](https://osu.ppy.sh/home/account/edit#new-oauth-application)
+and copy its **Client ID** and **Client Secret** into your viewer config. A callback URL is not
+needed for the client credentials grant. Add these sections to `osu-replay-viewer-config.json`
+(or the file selected by `--config`):
+
+```json
+{
+  "osu_api": {
+    "client_id": 12345,
+    "client_secret": "your-client-secret"
+  },
+  "game_settings": {
+    "show_leaderboard": true
+  }
+}
+```
+
+`game_settings.show_leaderboard` defaults to `false`. When enabled, the viewer fetches the
+current map's global top 50 for the replay's ruleset before playback starts, then shows the
+standard lazer leaderboard on the left during viewing and recording, including with hidden
+replay controls. The highlighted replay row follows its live score, accuracy and combo; its
+position updates when scores are overtaken or playback is rewound. A position below the fetched
+top is left unknown when the full leaderboard is larger than the fetched results.
+
+The leaderboard is a snapshot taken before playback; it includes stable and lazer scores without
+a mod filter. Missing credentials, unavailable beatmaps, or API errors produce a message and
+continue playback without the leaderboard. The leaderboard fetch does not run when the setting
+is disabled.
+
+These requests use `client_credentials` with the `public` scope, independently of the saved
+osu!lazer login. You can also provide `OSU_API_CLIENT_ID` and `OSU_API_CLIENT_SECRET` as environment
+variables; they override the corresponding config fields and are not copied into the config.
+The default config filename is ignored by Git because it can contain credentials.
+
+### Download a replay
+
+Use the modern API v2 score ID (`scores[].id`, not `legacy_score_id`):
+
+```sh
+osu-replay-viewer --download-replay 123456789 --replay-output replay.osr
+```
+
+`--replay-output` defaults to `<score ID>.osr`. An existing file is preserved unless `--yes` is
+provided; failed downloads do not replace it. The output directory must already exist. An
+unavailable replay or API failure returns a nonzero exit code.
+
+To download a replay and immediately view or record it:
+
+```sh
+osu-replay-viewer --osu-mode --view api 123456789 --replay-output replay.osr
+osu-replay-viewer --osu-mode --view api 123456789 --record --record-output replay.mp4 --yes
+```
+
+The matching beatmap must already be imported locally. `--view online <score ID>` retains its
+local lookup behavior; `--view api <score ID>` explicitly downloads a replay before opening it.
 
 ## Build
 To build this project, you need:
