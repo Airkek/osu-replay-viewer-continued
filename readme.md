@@ -19,6 +19,10 @@ to upgrade to make UI matches with actual game
 - Download replays (if you can log in)
 - Render replays to video file (FFmpeg required)
 
+Recording always uses SingleThread execution to preserve replay simulation accuracy.
+MultiThreaded settings in `framework.ini` or runtime changes are ignored while recording.
+Replay viewing keeps the configured execution mode.
+
 ## Basic Usage
 - [ ] TODO
 

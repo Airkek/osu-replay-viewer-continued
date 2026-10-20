@@ -419,7 +419,6 @@ namespace osu_replay_renderer_netcore
             else
             {
                 config.SetValue(FrameworkSetting.FrameSync, FrameSync.Unlimited);
-                config.SetValue(FrameworkSetting.ExecutionMode, ExecutionMode.SingleThread);
             }
             
             config.SetValue(FrameworkSetting.VolumeMusic, settings.VolumeMusic);
