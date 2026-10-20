@@ -7,6 +7,41 @@ const string token = "private-api-token";
 byte[] replay = [0, 0x7c, 0x6a, 0x34, 1, 0, 0, 0, 0, 0x7f, 0x55];
 int checks = 0;
 
+foreach (bool profile in new[] { true, false })
+{
+    await Check($"{(profile ? "profile" : "leaderboard")} with a cached token completes on a blocked game context", async () =>
+    {
+        using var handler = new ScriptedHandler();
+        handler.Add((_, _) => Task.FromResult(Token()));
+        handler.Add((_, _) => Task.FromResult(Json("{\"id\":42,\"username\":\"player\"}")));
+        handler.Add(async (_, cancellation) =>
+        {
+            await Task.Delay(20, cancellation).ConfigureAwait(false);
+            return Json(profile ? "{\"id\":42,\"username\":\"player\"}" : "{\"scores\":[]}");
+        });
+        using var http = new HttpClient(handler);
+        using var api = new OsuApiClient(17, secret, http);
+        using var warmup = await api.GetUserAsync(42, "player");
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new BlockedGameContext());
+            try
+            {
+                using var result = (profile ? api.GetUserAsync(42, "player") : api.GetLeaderboardAsync(123)).GetAwaiter().GetResult();
+                completion.SetResult();
+            }
+            catch (Exception error)
+            {
+                completion.SetException(error);
+            }
+        }) { IsBackground = true };
+        thread.Start();
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        handler.Complete();
+    });
+}
+
 await Check("OAuth public grant, modern leaderboard IDs and query parameters", async () =>
 {
     using var handler = new ScriptedHandler();
@@ -325,6 +360,11 @@ sealed class ScriptedHandler : HttpMessageHandler
         if (steps.Count == 0) throw new Exception($"Unexpected HTTP request: {request.Method} {request.RequestUri!.AbsolutePath}");
         return steps.Dequeue()(request, cancellationToken);
     }
+}
+
+sealed class BlockedGameContext : SynchronizationContext
+{
+    public override void Post(SendOrPostCallback callback, object state) { }
 }
 
 sealed class TestDirectory : IDisposable

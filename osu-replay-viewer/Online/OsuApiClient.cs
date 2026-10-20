@@ -56,15 +56,15 @@ public sealed class OsuApiClient : IDisposable
             foreach (string mod in mods)
                 target += "&mods%5B%5D=" + Uri.EscapeDataString(mod.ToUpperInvariant());
 
-        using var request = await createApiRequestAsync(target, cancellationToken);
+        using var request = await createApiRequestAsync(target, cancellationToken).ConfigureAwait(false);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ensureSuccess(response, "Leaderboard request");
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         JsonDocument document;
         try
         {
-            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (JsonException)
         {
@@ -88,15 +88,15 @@ public sealed class OsuApiClient : IDisposable
             throw new ArgumentException("A user ID or username is required", nameof(username));
 
         string lookup = byId ? userId.ToString(CultureInfo.InvariantCulture) : Uri.EscapeDataString(username);
-        using var request = await createApiRequestAsync($"users/{lookup}?key={(byId ? "id" : "username")}", cancellationToken);
+        using var request = await createApiRequestAsync($"users/{lookup}?key={(byId ? "id" : "username")}", cancellationToken).ConfigureAwait(false);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         ensureSuccess(response, "Player profile request");
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         JsonDocument document;
         try
         {
-            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (JsonException)
         {
@@ -168,7 +168,7 @@ public sealed class OsuApiClient : IDisposable
 
     private async Task<HttpRequestMessage> createApiRequestAsync(string target, CancellationToken cancellationToken)
     {
-        string token = await getAccessTokenAsync(cancellationToken);
+        string token = await getAccessTokenAsync(cancellationToken).ConfigureAwait(false);
         var request = new HttpRequestMessage(HttpMethod.Get, api_root + target);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         // This response version uses score IDs accepted by scores/{id}/download
@@ -179,7 +179,7 @@ public sealed class OsuApiClient : IDisposable
 
     private async Task<string> getAccessTokenAsync(CancellationToken cancellationToken)
     {
-        await tokenLock.WaitAsync(cancellationToken);
+        await tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (accessToken != null && DateTimeOffset.UtcNow < tokenExpiresAt)
@@ -197,12 +197,12 @@ public sealed class OsuApiClient : IDisposable
             };
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             request.Headers.UserAgent.ParseAdd("osu-replay-viewer-continued");
-            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             ensureSuccess(response, "Authentication");
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                using var token = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                using var token = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
                 var root = token.RootElement;
                 if (root.ValueKind != JsonValueKind.Object ||
                     !root.TryGetProperty("access_token", out var access) || access.ValueKind != JsonValueKind.String ||
