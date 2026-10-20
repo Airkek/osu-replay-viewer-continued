@@ -122,7 +122,7 @@ public class VeldridDeviceWrapper : RenderWrapper
     public ResourceFactory Factory
         => Device.ResourceFactory;
 
-    public override unsafe void WriteFrame(EncoderBase encoder)
+    public override unsafe bool WriteFrame(EncoderBase encoder)
     {
         if (PixelFormat == PixelFormatMode.YUV420)
         {
@@ -136,7 +136,7 @@ public class VeldridDeviceWrapper : RenderWrapper
 
         if (texture.Width != width || texture.Height != height)
         {
-            return;
+            return false;
         } 
 
         switch (graphicsSurface.Type)
@@ -176,6 +176,7 @@ public class VeldridDeviceWrapper : RenderWrapper
                 throw new NotSupportedException("Currently only OpenGL is supported");
             }
         }
+        return true;
     }
 
     public override void Finish(EncoderBase encoder)

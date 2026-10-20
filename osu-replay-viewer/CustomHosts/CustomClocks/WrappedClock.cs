@@ -1,77 +1,125 @@
-﻿using osu.Framework.Timing;
-using osu.Game.Rulesets.Mods;
+using System;
+using osu.Framework.Timing;
 
 namespace osu_replay_renderer_netcore.CustomHosts.CustomClocks
 {
     /// <summary>
-    /// Dirty wrapped clock which allow me to manipulate gameplay clock
+    /// Advances an adjustable source using deterministic output time
     /// </summary>
     public class WrappedClock : IFrameBasedClock, IAdjustableClock
     {
-        private IFrameBasedClock wrap;
-        public double TimeOffset { get; set; } = 0;
-        public IApplicableToRate RateMod { get; set; } = null;
+        private readonly IFrameBasedClock outputClock;
+        private double lastOutputTime;
+        private double fallbackRate = 1;
 
-        private IAdjustableClock original;
+        public IAdjustableClock OriginalSource { get; }
+
+        public event Action SourceStarted;
+        public event Action SourceStopped;
+        public event Action<double> SourceSeeked;
+        public event Action<double, double, double, double> SourceAdvanced;
 
         public WrappedClock(IFrameBasedClock wrap, IAdjustableClock originalSource)
         {
-            this.wrap = wrap;
-            original = originalSource;
+            outputClock = wrap ?? throw new ArgumentNullException(nameof(wrap));
+            OriginalSource = originalSource;
+            lastOutputTime = outputClock.CurrentTime;
+            CurrentTime = originalSource?.CurrentTime ?? lastOutputTime;
+            IsRunning = originalSource?.IsRunning ?? true;
         }
 
-        public double ElapsedFrameTime => wrap.ElapsedFrameTime;
-        public double FramesPerSecond => wrap.FramesPerSecond;
+        public double ElapsedFrameTime { get; private set; }
+        public double FramesPerSecond => outputClock.FramesPerSecond;
         public FrameTimeInfo TimeInfo => new FrameTimeInfo { Current = CurrentTime, Elapsed = ElapsedFrameTime };
-        public double UnderlyingTime => wrap.CurrentTime + TimeOffset;
-
-        public double CurrentTime
-        {
-            get
-            {
-                if (RateMod == null) return UnderlyingTime;
-                return UnderlyingTime * RateMod.ApplyToRate(UnderlyingTime);
-            }
-        }
+        public double CurrentTime { get; private set; }
+        public bool IsRunning { get; private set; }
 
         public void Reset()
         {
-            original.Reset();
+            Stop();
+            OriginalSource?.Reset();
+            CurrentTime = 0;
+            ElapsedFrameTime = 0;
+            SourceSeeked?.Invoke(CurrentTime);
         }
 
         public void Start()
         {
-            TimeOffset = -wrap.CurrentTime;
-            original.Start();
+            ProcessFrame();
+            if (IsRunning)
+                return;
+
+            IsRunning = true;
+            ElapsedFrameTime = 0;
+            OriginalSource?.Start();
+            SourceStarted?.Invoke();
         }
 
         public void Stop()
         {
-            original.Stop();
+            ProcessFrame();
+            if (!IsRunning)
+                return;
+
+            IsRunning = false;
+            ElapsedFrameTime = 0;
+            OriginalSource?.Stop();
+            SourceStopped?.Invoke();
         }
 
         public bool Seek(double position)
         {
-            TimeOffset += (position / Rate) - UnderlyingTime;
-            return original.Seek(position);
+            if (!double.IsFinite(position))
+                return false;
+
+            ProcessFrame();
+            CurrentTime = position;
+            ElapsedFrameTime = 0;
+            OriginalSource?.Seek(position);
+            SourceSeeked?.Invoke(position);
+            return true;
         }
 
         public void ResetSpeedAdjustments()
         {
-            original.ResetSpeedAdjustments();
+            ProcessFrame();
+            OriginalSource?.ResetSpeedAdjustments();
+            fallbackRate = 1;
         }
 
         public double Rate
         {
-            get { return original.Rate; }
-            set { original.Rate = value; }
+            get => OriginalSource?.Rate ?? fallbackRate;
+            set
+            {
+                ProcessFrame();
+                if (OriginalSource != null)
+                    OriginalSource.Rate = value;
+                else
+                    fallbackRate = value;
+            }
         }
-
-        public bool IsRunning => original.IsRunning;
 
         public void ProcessFrame()
         {
-            wrap.ProcessFrame();
+            outputClock.ProcessFrame();
+            double outputTime = outputClock.CurrentTime;
+            if (outputTime == lastOutputTime)
+                return;
+
+            double outputStart = lastOutputTime;
+            double elapsed = outputTime - lastOutputTime;
+            lastOutputTime = outputTime;
+            ElapsedFrameTime = 0;
+
+            if (!IsRunning || elapsed <= 0)
+                return;
+
+            double sourceStart = CurrentTime;
+            double rate = Rate;
+            ElapsedFrameTime = elapsed * rate;
+            CurrentTime += ElapsedFrameTime;
+            SourceAdvanced?.Invoke(outputStart, sourceStart, elapsed, rate);
         }
     }
 }

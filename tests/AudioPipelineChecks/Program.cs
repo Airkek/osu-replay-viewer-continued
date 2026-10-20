@@ -178,6 +178,105 @@ Check("cache does not retain sample owners", () =>
     Assert(!owner.IsAlive, "factory retained by PCM cache");
     GC.KeepAlive(cache);
 });
+Check("voice rate changes preserve the fractional source cursor", () =>
+{
+    var source = Mono(.0f, .1f, .2f, .3f, .4f, .5f, .6f, .7f, .8f);
+    var original = source.Data.ToArray();
+    var mixer = new StreamingAudioMixer(new AudioFormat { Channels = 1 });
+    var voice = mixer.AddVoice(source, rate: .5);
+    AssertPcm(mixer.MixChunk(3), new[] { .0f, .05f, .1f });
+    Assert(voice.Position == 1.5, "fractional source cursor");
+    voice.Rate = 2;
+    AssertPcm(mixer.MixChunk(3), new[] { .15f, .35f, .55f });
+    Assert(voice.Position == 7.5 && source.Data.SequenceEqual(original), "rate update reset cursor or mutated PCM");
+});
+Check("looping voices interpolate across the loop seam and stop", () =>
+{
+    var mixer = new StreamingAudioMixer(new AudioFormat { Channels = 1 });
+    var voice = mixer.AddVoice(Mono(.1f, .3f), rate: .5, loop: true);
+    AssertPcm(mixer.MixChunk(7), new[] { .1f, .2f, .3f, .2f, .1f, .2f, .3f });
+    voice.Stopped = true;
+    AssertPcm(mixer.MixChunk(2), new[] { 0f, 0f });
+});
+Check("negative source positions emit silence until playback starts", () =>
+{
+    var mixer = new StreamingAudioMixer(new AudioFormat { Channels = 1 });
+    mixer.AddVoice(Mono(.1f, .2f, .3f)).Position = -2;
+    AssertPcm(mixer.MixChunk(5), new[] { 0f, 0f, .1f, .2f, .3f });
+    AssertPcm(mixer.MixChunk(1), new[] { 0f });
+});
+Check("invalid playback rates are rejected without changing a voice", () =>
+{
+    var mixer = new StreamingAudioMixer(new AudioFormat { Channels = 1 });
+    var voice = mixer.AddVoice(Mono(.2f));
+    foreach (double rate in new[] { 0d, -1d, double.NaN, double.PositiveInfinity })
+    {
+        Throws<ArgumentOutOfRangeException>(() => mixer.AddVoice(Mono(.2f), rate: rate));
+        Throws<ArgumentOutOfRangeException>(() => voice.Rate = rate);
+    }
+    Assert(voice.Rate == 1, "invalid rate changed active voice");
+});
+Check("recorded voices start update and stop at exact output samples", () =>
+{
+    var source = Mono(.1f, .2f, .3f, .4f, .5f, .6f, .7f, .8f, .9f);
+    var recorded = new RecordedAudioMixer(new AudioFormat { Channels = 1 });
+    int id = recorded.StartVoice(2, source, 1);
+    recorded.UpdateVoice(4, id, .5, 2);
+    recorded.StopVoice(6, id);
+    var expected = new[] { 0f, 0f, .1f, .2f, .15f, .25f, 0f, 0f, 0f };
+    AssertPcm(RenderRecorded(recorded, expected.Length), expected);
+    AssertPcm(RenderRecorded(recorded, expected.Length), expected);
+});
+Check("recorded events retain insertion order at the same sample", () =>
+{
+    var recorded = new RecordedAudioMixer(new AudioFormat { Channels = 1 });
+    int stopped = recorded.StartVoice(0, Mono(.8f), 1, loop: true);
+    recorded.StopVoice(0, stopped);
+    int id = recorded.StartVoice(0, Mono(.4f), 1, loop: true);
+    recorded.UpdateVoice(0, id, .5, 1);
+    recorded.UpdateVoice(0, id, .25, 1);
+    recorded.StopVoice(2, id);
+    AssertPcm(RenderRecorded(recorded, 4), new[] { .1f, .1f, 0f, 0f });
+});
+Check("recorded independent voices are sorted by output sample", () =>
+{
+    var recorded = new RecordedAudioMixer(new AudioFormat { Channels = 1 });
+    int later = recorded.StartVoice(3, Mono(.2f), 1, loop: true);
+    int earlier = recorded.StartVoice(1, Mono(.1f), 1, loop: true);
+    recorded.StopVoice(5, later);
+    recorded.StopVoice(4, earlier);
+    AssertPcm(RenderRecorded(recorded, 6), new[] { 0f, .1f, .1f, .3f, .2f, 0f });
+});
+Check("recorded music and effects mix once across file and event boundaries", () =>
+{
+    const int frames = 4111;
+    var music = Signal(frames * 2);
+    var recorded = new RecordedAudioMixer(new AudioFormat());
+    int id = recorded.StartVoice(2, Mono(.2f), .5, loop: true);
+    recorded.UpdateVoice(4095, id, .25, 1);
+    recorded.StopVoice(frames - 2, id);
+    WithRawMusic(music, path =>
+    {
+        var output = RenderRecorded(recorded, frames, path, .75);
+        var expected = music.Select((value, i) => value * .75f +
+            (i / 2 < 2 || i / 2 >= frames - 2 ? 0f : i / 2 < 4095 ? .1f : .05f)).ToArray();
+        AssertPcm(output, expected);
+    });
+});
+Check("recorded music length mismatch fails before encoding", () =>
+{
+    var recorded = new RecordedAudioMixer(new AudioFormat());
+    bool written = false;
+    WithRawMusic(new[] { .1f, .2f }, path =>
+        Throws<InvalidDataException>(() => recorded.Render(2, path, 1, _ => written = true)));
+    Assert(!written, "truncated music was encoded as silence");
+});
+Check("recorded non-finite music fails instead of producing corrupt PCM", () =>
+{
+    var recorded = new RecordedAudioMixer(new AudioFormat());
+    WithRawMusic(new[] { float.NaN, 0f }, path =>
+        Throws<InvalidDataException>(() => RenderRecorded(recorded, 1, path)));
+});
 string ffmpegPath = Environment.GetEnvironmentVariable("ORV_FFMPEG");
 if (string.IsNullOrWhiteSpace(ffmpegPath))
 {
@@ -270,6 +369,39 @@ static void Throws<T>(Action action) where T : Exception
     throw new Exception($"Expected {typeof(T).Name}");
 }
 static short Pcm(float value) => (short)((float)Math.Tanh(value) * 32767f);
+static AudioBuffer Mono(params float[] values)
+{
+    var result = new AudioBuffer(new AudioFormat { Channels = 1 }, values.Length);
+    values.CopyTo(result.Data, 0);
+    return result;
+}
+static void AssertPcm(ReadOnlySpan<byte> actual, ReadOnlySpan<float> expected)
+{
+    Assert(actual.Length == expected.Length * sizeof(short), "PCM output length");
+    for (int i = 0; i < expected.Length; i++)
+        Assert(Math.Abs(BinaryPrimitives.ReadInt16LittleEndian(actual[(i * 2)..]) - Pcm(expected[i])) <= 1,
+            $"PCM value {i}");
+}
+static byte[] RenderRecorded(RecordedAudioMixer recorded, long samples, string musicPath = null, double musicGain = 1)
+{
+    using var output = new MemoryStream();
+    recorded.Render(samples, musicPath, musicGain, output.Write);
+    return output.ToArray();
+}
+static void WithRawMusic(float[] values, Action<string> action)
+{
+    string path = Path.Combine(Path.GetTempPath(), $"orv-music-check-{Guid.NewGuid():N}.f32");
+    try
+    {
+        using (var writer = new BinaryWriter(File.Create(path)))
+            foreach (float value in values) writer.Write(value);
+        action(path);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
+}
 static float[] Signal(int count) => Enumerable.Range(0, count).Select(i => (float)Math.Sin(i * .13) * .5f).ToArray();
 static AudioBuffer Tone()
 {

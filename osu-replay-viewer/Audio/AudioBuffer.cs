@@ -10,7 +10,7 @@ namespace osu_replay_renderer_netcore.Audio
     /// are represented as float, requiring about 109.9 MiB (115.2 MB) of system memory
     /// for 5 minutes of stereo audio at 48 kHz
     /// </summary>
-    public class AudioBuffer
+    public class AudioBuffer : IPcmSource
     {
         /// <summary>
         /// Buffer audio format
@@ -66,6 +66,37 @@ namespace osu_replay_renderer_netcore.Audio
             int blockOffset = offset % BlockLength;
             return blocks[offset / BlockLength].AsSpan(blockOffset, Math.Min(count, BlockLength - blockOffset));
         }
+
+        AudioFormat IPcmSource.Format => Format;
+        long IPcmSource.Length => Samples;
+
+        void IPcmSource.ReadFrames(long firstFrame, Span<float> output)
+        {
+            int channels = Format.Channels;
+            if (channels <= 0 || output.Length % channels != 0)
+                throw new ArgumentException("PCM output must contain complete channel frames", nameof(output));
+
+            output.Clear();
+            int frames = output.Length / channels;
+            if (frames == 0 || firstFrame >= Samples || firstFrame <= -(long)frames)
+                return;
+
+            int destinationFrame = (int)Math.Max(0, -firstFrame);
+            int sourceFrame = (int)Math.Max(0, firstFrame);
+            int remaining = checked(Math.Min(frames - destinationFrame, Samples - sourceFrame) * channels);
+            int sourceOffset = checked(sourceFrame * channels);
+            int destinationOffset = checked(destinationFrame * channels);
+            while (remaining > 0)
+            {
+                var values = GetReadOnlySpan(sourceOffset, remaining);
+                values.CopyTo(output.Slice(destinationOffset));
+                sourceOffset += values.Length;
+                destinationOffset += values.Length;
+                remaining -= values.Length;
+            }
+        }
+
+        void IDisposable.Dispose() { }
 
         public AudioBuffer(AudioFormat format, int samples)
         {

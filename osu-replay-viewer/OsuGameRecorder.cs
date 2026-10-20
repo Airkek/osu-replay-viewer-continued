@@ -23,6 +23,7 @@ using osu.Game.Scoring.Legacy;
 using osu.Game.Screens.Play;
 using osu.Game.Screens.Ranking;
 using osu.Game.Screens.Ranking.Statistics;
+using osu_replay_renderer_netcore.Audio;
 using osu_replay_renderer_netcore.Audio.Conversion;
 using osu_replay_renderer_netcore.CustomHosts;
 using System;
@@ -498,24 +499,16 @@ namespace osu_replay_renderer_netcore
 
             if (Host is ReplayRecordGameHost recordHost && recordHost.NeedAudio)
             {
-                var speed = score.ScoreInfo.Mods.OfType<IApplicableToRate>().Aggregate<IApplicableToRate, double>(1, (current, rateMod) => rateMod.ApplyToRate(0, current));
-                var pitch = 1d;
-                foreach (var mod in score.ScoreInfo.Mods)
-                {
-                    if (mod is ModDaycore or ModNightcore or ModDoubleTime { AdjustPitch.Value: true } or ModHalfTime { AdjustPitch.Value: true })
-                    {
-                        pitch = speed;
-                    } 
-                }
                 var volumeMusic = config.Get<double>(FrameworkSetting.VolumeMusic);
                 var volumeUniversal = config.Get<double>(FrameworkSetting.VolumeUniversal);
                 
-                Console.WriteLine("Decoding audio...");
+                Console.WriteLine("Reading audio format...");
                 sw.Restart();
-                var track = FFmpegAudioTools.Decode(GetCurrentBeatmapAudioPath(), tempoFactor: speed, pitchFactor: pitch, volume: volumeMusic * volumeUniversal);
+                var track = new FFmpegMusicSource(GetCurrentBeatmapAudioPath(), FFmpegAudioTools.FFmpegExec,
+                    volumeMusic * volumeUniversal);
                 sw.Stop();
-                Console.WriteLine($"Audio decoded in {sw.ElapsedMilliseconds}ms");
-                recordHost.SetAudioTrack(track);
+                Console.WriteLine($"Audio format loaded in {sw.ElapsedMilliseconds}ms");
+                recordHost.SetMusicSource(track);
             }
 
             var leaderboard = settings.ShowLeaderboard ? LoadLeaderboard(score, beatmap) : null;
@@ -642,7 +635,7 @@ namespace osu_replay_renderer_netcore
                     }
                 };
             }
-            if (newScreen is RecorderReplayPlayer player && Host is ReplayRecordGameHost)
+            if (newScreen is RecorderReplayPlayer player && Host is ReplayRecordGameHost recordHost)
             {
                 player.ManipulateClock = true;
 
@@ -659,6 +652,7 @@ namespace osu_replay_renderer_netcore
                 dc.AllowDecoupling = false;
                 
                 clock.ChangeSource(wrapped);
+                recordHost.SetGameplayClock(wrapped, Beatmap.Value.Track, () => clock.TotalAppliedOffset);
             }
         }
 
