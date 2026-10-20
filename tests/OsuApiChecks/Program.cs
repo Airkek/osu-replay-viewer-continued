@@ -38,6 +38,42 @@ await Check("OAuth public grant, modern leaderboard IDs and query parameters", a
     handler.Complete();
 });
 
+foreach (var lookup in new[] { (Id: 42, Name: "old-name"), (Id: 1, Name: "player +&#?"), (Id: 1, Name: "12345") })
+{
+    await Check("player profile lookup uses an ID or an escaped explicit username", async () =>
+    {
+        using var handler = new ScriptedHandler();
+        handler.Add((_, _) => Task.FromResult(Token()));
+        handler.Add((request, _) =>
+        {
+            Bearer(request);
+            bool byId = lookup.Id > 1;
+            Assert(Uri.UnescapeDataString(request.RequestUri!.AbsolutePath) == "/api/v2/users/" + (byId ? "42" : lookup.Name), "profile lookup changed the player identity");
+            Assert(Value(Query(request.RequestUri.Query), "key") == (byId ? "id" : "username"), "ambiguous player lookup");
+            return Task.FromResult(Json("{\"id\":42,\"username\":\"current-name\",\"avatar_url\":\"https://a.ppy.sh/42?updated\"}"));
+        });
+        using var http = new HttpClient(handler);
+        using var api = new OsuApiClient(17, secret, http);
+        using var profile = await api.GetUserAsync(lookup.Id, lookup.Name);
+        Assert(profile.RootElement.GetProperty("avatar_url").GetString() == "https://a.ppy.sh/42?updated", "profile avatar URL lost");
+        handler.Complete();
+    });
+}
+
+foreach (string body in new[] { "not JSON", "null", "{}", "{\"id\":\"42\",\"username\":\"player\"}", "{\"id\":1,\"username\":\"player\"}", "{\"id\":43,\"username\":\"player\"}", "{\"id\":42,\"username\":\"\"}" })
+{
+    await Check("invalid or mismatched player profile is rejected", async () =>
+    {
+        using var handler = new ScriptedHandler();
+        handler.Add((_, _) => Task.FromResult(Token()));
+        handler.Add((_, _) => Task.FromResult(Json(body)));
+        using var http = new HttpClient(handler);
+        using var api = new OsuApiClient(17, secret, http);
+        Redacted(await ThrowsAsync<InvalidOperationException>(async () => { using var result = await api.GetUserAsync(42, "player"); }));
+        handler.Complete();
+    });
+}
+
 await Check("one client token serves leaderboard and replay requests", async () =>
 {
     using var directory = new TestDirectory();
@@ -145,6 +181,7 @@ await Check("invalid inputs perform no HTTP requests", async () =>
     await ThrowsAsync<ArgumentException>(async () => { using var result = await api.GetLeaderboardAsync(123, limit: 51); });
     await ThrowsAsync<ArgumentException>(async () => { using var result = await api.GetLeaderboardAsync(123, mods: ["HD&limit=999"]); });
     await ThrowsAsync<ArgumentException>(() => api.DownloadReplayAsync(0, "unused.osr"));
+    await ThrowsAsync<ArgumentException>(async () => { using var result = await api.GetUserAsync(1, " "); });
     handler.Complete();
 });
 

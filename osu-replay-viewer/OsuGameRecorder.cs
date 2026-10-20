@@ -423,6 +423,9 @@ namespace osu_replay_renderer_netcore
 
         private void LoadViewer(Score score)
         {
+            if (ReplayViewType != "auto")
+                LoadReplayUser(score.ScoreInfo);
+
             var sw = new Stopwatch();            
             // Apply some stuffs
             config.SetValue(FrameworkSetting.ConfineMouseMode, ConfineMouseMode.Never);
@@ -548,6 +551,22 @@ namespace osu_replay_renderer_netcore
             } else if (configMgr is ManiaRulesetConfigManager maniaMgr)
             {
                 maniaMgr.SetValue(ManiaRulesetSetting.ScrollSpeed, Math.Clamp(settings.ScrollSpeed, 1.0, 40.0));
+            }
+        }
+
+        private void LoadReplayUser(ScoreInfo score)
+        {
+            try
+            {
+                ReplayUserResolver.ResolveAsync(score, () => OsuApiCommands.CreateClient(apiOptions)).GetAwaiter().GetResult();
+            }
+            catch (CLIException e)
+            {
+                Console.Error.WriteLine($"[Player] {e.DisplayMessage}; continuing with the replay's player data");
+            }
+            catch (Exception e) when (e is HttpRequestException or IOException or InvalidOperationException or ArgumentException or JsonException or OperationCanceledException)
+            {
+                Console.Error.WriteLine($"[Player] {e.Message}; continuing with the replay's player data");
             }
         }
 
