@@ -17,6 +17,14 @@ public enum ColorSpaceMode
     BT709
 }
 
+public enum VideoRateControl
+{
+    ConstantQuantizer,
+    ConstantQuality,
+    VariableBitrate,
+    ConstantBitrate
+}
+
 public struct EncoderConfig
 {
     public int FPS;
@@ -25,6 +33,10 @@ public struct EncoderConfig
     public string Preset;
     public string Encoder;
     public string Bitrate;
+    public VideoRateControl? RateControl;
+    public double? Quality;
+    public string MaxBitrate;
+    public string BufferSize;
     public string FFmpegPath;
     public string FFmpegExec;
     public PixelFormatMode PixelFormat;
@@ -33,7 +45,7 @@ public struct EncoderConfig
 
 public abstract class EncoderBase
 {
-    private readonly object WriteLocker = new();
+    protected readonly object WriteLocker = new();
     public EncoderConfig Config;
     public PixelFormatMode PixelFormat => Config.PixelFormat;
     public abstract bool CanWrite { get; }

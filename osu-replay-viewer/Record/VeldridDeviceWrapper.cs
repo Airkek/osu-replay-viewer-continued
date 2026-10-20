@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Reflection;
 using osu_replay_renderer_netcore.CustomHosts.Record;
@@ -31,8 +31,8 @@ public class VeldridDeviceWrapper : RenderWrapper
     private readonly IGraphicsSurface graphicsSurface;
     private readonly GraphicsDevice Device;
 
-    private uint[] pboIds = new uint[2];
-    private int pboIndex = 0;
+    private readonly uint[] pboIds = new uint[PboFrameRing.SlotCount];
+    private PboFrameRing pboRing;
     private bool pboInitialized = false;
     private int pboSize = 0;
 
@@ -87,25 +87,36 @@ public class VeldridDeviceWrapper : RenderWrapper
 
     private unsafe void InitializePBOs(int size)
     {
-        if (pboInitialized && pboSize == size) return;
-        
         if (pboInitialized)
         {
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[0]);
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[1]);
+            if (pboSize != size) throw new InvalidOperationException("Readback dimensions changed during recording");
+            return;
         }
 
-        OpenGLNative.glGenBuffers(1, out pboIds[0]);
-        OpenGLNative.glGenBuffers(1, out pboIds[1]);
-
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < pboIds.Length; i++)
         {
+            OpenGLNative.glGenBuffers(1, out pboIds[i]);
             OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[i]);
             OpenGLNative.glBufferData(BufferTarget.PixelPackBuffer, (UIntPtr)size, IntPtr.Zero.ToPointer(), BufferUsageHint.StreamRead);
         }
         OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-        pboInitialized = true;
         pboSize = size;
+        pboRing = new PboFrameRing(size, MapPbo, UnmapPbo);
+        pboInitialized = true;
+    }
+
+    private unsafe IntPtr MapPbo(int slot)
+    {
+        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[slot]);
+        try { return (IntPtr)OpenGLNative.glMapBuffer(BufferTarget.PixelPackBuffer, BufferAccess.ReadOnly); }
+        finally { OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0); }
+    }
+
+    private void UnmapPbo(int slot)
+    {
+        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[slot]);
+        try { OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer); }
+        finally { OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0); }
     }
 
     public ResourceFactory Factory
@@ -137,43 +148,25 @@ public class VeldridDeviceWrapper : RenderWrapper
 
                 info.ExecuteOnGLThread(() =>
                 {
+                    int oldBuffer, oldAlignment;
+                    OpenGLNative.glGetIntegerv(GetPName.PixelPackBufferBinding, &oldBuffer);
+                    OpenGLNative.glGetIntegerv(GetPName.PackAlignment, &oldAlignment);
                     InitializePBOs(bufferSize);
-                    
-                    int index = pboIndex % 2;
-                    int nextIndex = (pboIndex + 1) % 2;
-
-                    // Read pixels into current PBO
-                    OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[index]);
-                    OpenGLNative.glReadPixels(
-                        0, 0,
-                        texture.Width, texture.Height,
-                        GLPixelFormat.Rgb,
-                        GLPixelType.UnsignedByte,
-                        IntPtr.Zero.ToPointer());
-                    OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
-
-                    // Process previous PBO
-                    if (pboIndex > 0)
+                    try
                     {
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[nextIndex]);
-                        var dataPtr = OpenGLNative.glMapBuffer(
-                            BufferTarget.PixelPackBuffer,
-                            BufferAccess.ReadOnly);
-
-                        if (dataPtr != IntPtr.Zero.ToPointer())
-                            try
-                            {
-                                var span = new ReadOnlySpan<byte>(dataPtr, bufferSize);
-                                encoder.WriteFrame(span);
-                            }
-                            finally
-                            {
-                                OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer);
-                            }
-                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
+                        int slot = pboRing.AcquireReadSlot();
+                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[slot]);
+                        OpenGLNative.glPixelStorei(PixelStoreParameter.PackAlignment, 1);
+                        OpenGLNative.glReadPixels(0, 0, texture.Width, texture.Height,
+                            GLPixelFormat.Rgb, GLPixelType.UnsignedByte, IntPtr.Zero.ToPointer());
+                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, (uint)oldBuffer);
+                        pboRing.CaptureCompleted(encoder);
                     }
-                    
-                    pboIndex++;
+                    finally
+                    {
+                        OpenGLNative.glPixelStorei(PixelStoreParameter.PackAlignment, oldAlignment);
+                        OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, (uint)oldBuffer);
+                    }
                 });
                 break;
             }
@@ -185,39 +178,24 @@ public class VeldridDeviceWrapper : RenderWrapper
         }
     }
 
-    public override unsafe void Finish(EncoderBase encoder)
+    public override void Finish(EncoderBase encoder)
     {
-        if (graphicsSurface.Type != GraphicsSurfaceType.OpenGL) return;
-        
-        var info = Device.GetOpenGLInfo();
-        info.ExecuteOnGLThread(() =>
-        {
-             if (!pboInitialized) return;
+        if (graphicsSurface.Type != GraphicsSurfaceType.OpenGL || !pboInitialized) return;
+        Device.GetOpenGLInfo().ExecuteOnGLThread(() => pboRing.Finish(encoder));
+    }
 
-            // Process the last frame if any
-            if (pboIndex > 0)
+    public override void ReleaseResources()
+    {
+        if (graphicsSurface.Type != GraphicsSurfaceType.OpenGL || !pboInitialized) return;
+        Device.GetOpenGLInfo().ExecuteOnGLThread(() =>
+        {
+            try { pboRing.ReleaseMappings(); }
+            finally
             {
-                int pendingIndex = (pboIndex - 1) % 2;
-                OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, pboIds[pendingIndex]);
-                var dataPtr = OpenGLNative.glMapBuffer(BufferTarget.PixelPackBuffer, BufferAccess.ReadOnly);
-                if (dataPtr != IntPtr.Zero.ToPointer())
-                {
-                    try
-                    {
-                        var span = new ReadOnlySpan<byte>(dataPtr, pboSize);
-                        encoder.WriteFrame(span);
-                    }
-                    finally
-                    {
-                        OpenGLNative.glUnmapBuffer(BufferTarget.PixelPackBuffer);
-                    }
-                }
-                OpenGLNative.glBindBuffer(BufferTarget.PixelPackBuffer, 0);
+                for (int i = 0; i < pboIds.Length; i++) OpenGLNative.glDeleteBuffers(1, ref pboIds[i]);
+                pboInitialized = false;
+                pboRing = null;
             }
-            
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[0]);
-            OpenGLNative.glDeleteBuffers(1, ref pboIds[1]);
-            pboInitialized = false;
         });
     }
 }

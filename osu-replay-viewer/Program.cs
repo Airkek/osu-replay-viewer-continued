@@ -200,7 +200,7 @@ namespace osu_replay_renderer_netcore
             modOverride.OnOptions += (args) => { modsOverride.Add(args[0]); };
             GameHost host;
             OsuGameRecorder game;
-            QueuedEncoder queuedEncoder = null;
+            IDisposable encoderLifetime = null;
 
             try
             {
@@ -252,6 +252,10 @@ namespace osu_replay_renderer_netcore
                         Preset = orvConfig.FFmpegOptions.VideoEncoderPreset,
                         Encoder = orvConfig.FFmpegOptions.VideoEncoder,
                         Bitrate = orvConfig.FFmpegOptions.VideoEncoderBitrate,
+                        RateControl = orvConfig.FFmpegOptions.VideoRateControl,
+                        Quality = orvConfig.FFmpegOptions.VideoQuality,
+                        MaxBitrate = orvConfig.FFmpegOptions.VideoEncoderMaxBitrate,
+                        BufferSize = orvConfig.FFmpegOptions.VideoEncoderBufferSize,
 
                         // External only
                         FFmpegExec = orvConfig.FFmpegOptions.Executable,
@@ -279,6 +283,7 @@ namespace osu_replay_renderer_netcore
                         }
 
                         encoder = new NvidiaGpuFFmpegEncoder(config);
+                        encoderLifetime = (IDisposable)encoder;
                     }
                     else
                     {
@@ -288,7 +293,8 @@ namespace osu_replay_renderer_netcore
                             FFmpegMode.Binding => new FFmpegAutoGenEncoder(config),
                             _ => throw new ArgumentOutOfRangeException("FFmpeg mode")
                         };
-                        encoder = queuedEncoder = new QueuedEncoder(encoder);
+                        encoder = new QueuedEncoder(encoder);
+                        encoderLifetime = (IDisposable)encoder;
                     }
 
                     host = new ReplayRecordGameHost(gameName, encoder, recordClock, orvConfig.RecordOptions.Renderer, patched, orvConfig.GameSettings);
@@ -429,7 +435,7 @@ namespace osu_replay_renderer_netcore
                 }
                 finally
                 {
-                    queuedEncoder?.Dispose();
+                    encoderLifetime?.Dispose();
                 }
             }
         }

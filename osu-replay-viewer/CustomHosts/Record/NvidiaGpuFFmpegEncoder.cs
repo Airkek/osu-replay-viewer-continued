@@ -1,6 +1,8 @@
 using System;
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Drawing;
+using System.Runtime.ExceptionServices;
 using FFmpeg.AutoGen;
 using ManagedCuda;
 using ManagedCuda.BasicTypes;
@@ -8,26 +10,67 @@ using static FFmpeg.AutoGen.ffmpeg;
 
 namespace osu_replay_renderer_netcore.CustomHosts.Record;
 
-public unsafe class NvidiaGpuFFmpegEncoder : EncoderBase, IOpenGLTextureEncoder
+public unsafe class NvidiaGpuFFmpegEncoder : EncoderBase, IOpenGLTextureEncoder, IEncoderAudioInput, IDisposable
 {
     private const int gl_texture_2d = 0x0DE1;
-
+    private const int frame_capacity = 3;
+    private readonly object producerLock = new();
+    private readonly BlockingCollection<FrameSlot> availableFrames = new(frame_capacity);
+    private readonly List<FrameSlot> frameSlots = new();
+    private readonly Dictionary<int, TextureRegistration> textures = new();
+    private EncoderWorker<WorkItem> worker;
     private AVFormatContext* formatContext;
     private AVCodecContext* codecContext;
     private AVStream* videoStream;
+    private AVPacket* packet;
     private AVBufferRef* cudaDeviceRef;
     private AVBufferRef* cudaFramesRef;
-    private int pts;
-    private long bitrate;
-
     private CUcontext cudaContext;
     private CUstream cudaStream;
-    private CudaOpenGLImageInteropResource registeredTexture;
-    private int registeredTextureId;
+    private CudaStream transferStream;
+    private NativeAudioMuxer audioMuxer;
+    private EncoderPacketPump packetPump;
+    private int audioSampleRate;
+    private int audioChannels;
+    private long pts;
+    private bool startRequested;
+    private bool finished;
+    private volatile bool acceptingFrames;
 
-    private bool acceptingFrames;
+    private sealed class FrameSlot
+    {
+        public AVFrame* Frame;
+        public CudaEvent Ready;
+        public bool CopyCompleted;
+    }
 
-    public override bool CanWrite => formatContext != null && formatContext->pb != null && acceptingFrames;
+    private sealed class TextureRegistration
+    {
+        public CudaOpenGLImageInteropResource Resource;
+        public CudaEvent Ready;
+        public bool HasCopy;
+    }
+
+    private readonly struct WorkItem
+    {
+        public readonly FrameSlot Video;
+        public readonly byte[] Audio;
+        public readonly int AudioLength;
+
+        public WorkItem(FrameSlot video) => (Video, Audio, AudioLength) = (video, null, 0);
+        public WorkItem(byte[] audio, int length) => (Video, Audio, AudioLength) = (null, audio, length);
+    }
+
+    public override bool CanWrite
+    {
+        get
+        {
+            worker?.ThrowIfFaulted();
+            return acceptingFrames;
+        }
+    }
+
+    public int TextureBufferCount => frame_capacity;
 
     public NvidiaGpuFFmpegEncoder(EncoderConfig config) : base(config)
     {
@@ -35,304 +78,383 @@ public unsafe class NvidiaGpuFFmpegEncoder : EncoderBase, IOpenGLTextureEncoder
             ffmpeg.RootPath = Config.FFmpegPath;
     }
 
-    public static bool IsSupportedConfig(EncoderConfig config)
-    {
-        return config.Encoder is "h264_nvenc" or "hevc_nvenc";
-    }
-
+    public static bool IsSupportedConfig(EncoderConfig config) => config.Encoder is "h264_nvenc" or "hevc_nvenc";
     public bool AcceptsOpenGLTexture(PixelFormatMode pixelFormat) => pixelFormat == PixelFormatMode.NV12;
+
+    public void ConfigureAudio(int sampleRate, int channels)
+    {
+        lock (producerLock)
+        {
+            if (startRequested)
+                throw new InvalidOperationException("Audio must be configured before starting the encoder");
+            if (sampleRate < 1 || channels < 1)
+                throw new ArgumentOutOfRangeException(nameof(sampleRate));
+            audioSampleRate = sampleRate;
+            audioChannels = channels;
+        }
+    }
 
     protected override void _startInternal()
     {
-        if (acceptingFrames)
-            throw new InvalidOperationException("Already accepting frames.");
-        
-        if (Config.PixelFormat != PixelFormatMode.NV12)
-            throw new InvalidOperationException("NVIDIA GPU encoder requires NV12 pixel format.");
+        lock (producerLock)
+        {
+            if (startRequested || finished)
+                throw new InvalidOperationException("The encoder has already been started or disposed");
+            if (Config.PixelFormat != PixelFormatMode.NV12)
+                throw new InvalidOperationException("NVIDIA GPU encoder requires NV12 pixel format");
+            startRequested = true;
+            worker = new EncoderWorker<WorkItem>(frame_capacity * 2, InitializeEncoder, ProcessItem, ReleaseItem,
+                FinalizeEncoder, ReleaseResources);
+        }
 
-        avformat_network_init();
+        try
+        {
+            worker.Start();
+            acceptingFrames = true;
+        }
+        catch
+        {
+            finished = true;
+            try { worker.Dispose(); }
+            catch { }
+            availableFrames.Dispose();
+            throw;
+        }
+    }
 
-        fixed (AVFormatContext** ctx = &formatContext)
-            ThrowIfError(avformat_alloc_output_context2(ctx, null, null, Config.OutputPath), "Could not create output context");
-
+    private void InitializeEncoder()
+    {
+        fixed (AVFormatContext** context = &formatContext)
+            ThrowIfError(avformat_alloc_output_context2(context, null, null, Config.OutputPath), "Could not create output context");
         if (formatContext == null)
-            throw new InvalidOperationException("Could not create output context.");
+            throw new InvalidOperationException("Could not create output context");
 
         AVCodec* codec = avcodec_find_encoder_by_name(Config.Encoder);
         if (codec == null)
-            throw new InvalidOperationException($"Codec {Config.Encoder} not found.");
-
+            throw new InvalidOperationException($"Codec {Config.Encoder} not found");
         videoStream = avformat_new_stream(formatContext, codec);
         if (videoStream == null)
-            throw new InvalidOperationException("Could not create video stream.");
-
+            throw new InvalidOperationException("Could not create video stream");
         videoStream->id = (int)formatContext->nb_streams - 1;
-
         codecContext = avcodec_alloc_context3(codec);
         if (codecContext == null)
-            throw new InvalidOperationException("Failed to allocate codec context.");
-
-        bitrate = ParseBitrate(Config.Bitrate);
-        codecContext->bit_rate = bitrate;
+            throw new InvalidOperationException("Could not allocate codec context");
+        codecContext->bit_rate = ParseBitrate(Config.Bitrate);
         codecContext->width = Config.Resolution.Width;
         codecContext->height = Config.Resolution.Height;
         codecContext->time_base = new AVRational { num = 1, den = Config.FPS };
         codecContext->framerate = new AVRational { num = Config.FPS, den = 1 };
+        videoStream->time_base = codecContext->time_base;
+        videoStream->avg_frame_rate = codecContext->framerate;
         codecContext->pix_fmt = AVPixelFormat.AV_PIX_FMT_CUDA;
         codecContext->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
         codecContext->color_range = AVColorRange.AVCOL_RANGE_JPEG;
-
-        if (Config.ColorSpace == ColorSpaceMode.BT601)
-        {
-            codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT470BG;
-            codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT470BG;
-            codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_GAMMA22;
-        }
-        else
-        {
-            codecContext->colorspace = AVColorSpace.AVCOL_SPC_BT709;
-            codecContext->color_primaries = AVColorPrimaries.AVCOL_PRI_BT709;
-            codecContext->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_BT709;
-        }
-
+        codecContext->colorspace = Config.ColorSpace == ColorSpaceMode.BT601 ? AVColorSpace.AVCOL_SPC_BT470BG : AVColorSpace.AVCOL_SPC_BT709;
+        codecContext->color_primaries = Config.ColorSpace == ColorSpaceMode.BT601 ? AVColorPrimaries.AVCOL_PRI_BT470BG : AVColorPrimaries.AVCOL_PRI_BT709;
+        codecContext->color_trc = Config.ColorSpace == ColorSpaceMode.BT601 ? AVColorTransferCharacteristic.AVCOL_TRC_GAMMA22 : AVColorTransferCharacteristic.AVCOL_TRC_BT709;
         if ((formatContext->oformat->flags & AVFMT_GLOBALHEADER) != 0)
             codecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-
         InitializeCudaFrames();
-
-        AVDictionary* opts = null;
-        foreach (var pair in GetEncoderOptions())
-            av_dict_set(&opts, pair.Key, pair.Value, 0);
-
-        try
-        {
-            ThrowIfError(avcodec_open2(codecContext, codec, &opts), "Failed to open codec");
-        }
-        finally
-        {
-            av_dict_free(&opts);
-        }
-
-        ThrowIfError(avcodec_parameters_from_context(videoStream->codecpar, codecContext), "Failed to copy codec parameters");
-
+        NativeEncoderSettings.Apply(codecContext, Config);
+        ThrowIfError(avcodec_open2(codecContext, codec, null), "Could not open codec");
+        ThrowIfError(avcodec_parameters_from_context(videoStream->codecpar, codecContext), "Could not copy codec parameters");
+        if (audioSampleRate > 0)
+            audioMuxer = new NativeAudioMuxer(formatContext, audioSampleRate, audioChannels);
         if ((formatContext->oformat->flags & AVFMT_NOFILE) == 0)
             ThrowIfError(avio_open(&formatContext->pb, Config.OutputPath, AVIO_FLAG_WRITE), "Could not open output file");
-
-        ThrowIfError(avformat_write_header(formatContext, null), "Failed to write output header");
-        Console.WriteLine("[NvidiaGpuFFmpegEncoder] Using OpenGL texture -> CUDA frame -> NVENC path (no raw frame readback).");
-
-        acceptingFrames = true;
-    }
-
-    protected override void _writeFrameInternal(ReadOnlySpan<byte> frame)
-    {
-        throw new NotSupportedException("NVIDIA GPU encoder accepts OpenGL textures only.");
-    }
-
-    public void WriteOpenGLTexture(int textureId, int width, int height, PixelFormatMode pixelFormat)
-    {
-        if (!CanWrite || !AcceptsOpenGLTexture(pixelFormat))
-            return;
-
-        if (width != Config.Resolution.Width || height != Config.Resolution.Height * 3 / 2)
-            throw new InvalidOperationException($"Unexpected NV12 texture size: {width}x{height}.");
-
-        AVFrame* frame = av_frame_alloc();
-        if (frame == null)
-            throw new InvalidOperationException("Could not allocate frame.");
-
-        try
+        ThrowIfError(avformat_write_header(formatContext, null), "Could not write output header");
+        packet = av_packet_alloc();
+        if (packet == null)
+            throw new InvalidOperationException("Could not allocate packet");
+        packetPump = new EncoderPacketPump(frame => avcodec_send_frame(codecContext, (AVFrame*)frame),
+            () => { int count = ReceivePackets(out int state); return (count, state); },
+            error => ThrowIfError(error, "Could not send frame"), AVERROR(EAGAIN), AVERROR_EOF);
+        using var contextScope = NvidiaCudaInterop.PushContext(cudaContext);
+        for (int index = 0; index < frame_capacity; index++)
         {
-            frame->format = (int)AVPixelFormat.AV_PIX_FMT_CUDA;
-            frame->width = Config.Resolution.Width;
-            frame->height = Config.Resolution.Height;
-            frame->hw_frames_ctx = av_buffer_ref(cudaFramesRef);
-            if (frame->hw_frames_ctx == null)
-                throw new InvalidOperationException("Could not reference CUDA frames context.");
-
-            ThrowIfError(av_hwframe_get_buffer(cudaFramesRef, frame, 0), "Could not allocate CUDA frame");
-            CopyTextureToFrame(textureId, frame);
-
-            frame->pts = pts++;
-            EncodeFrame(frame);
+            var slot = new FrameSlot();
+            frameSlots.Add(slot);
+            slot.Frame = av_frame_alloc();
+            if (slot.Frame == null)
+                throw new InvalidOperationException("Could not allocate frame");
+            slot.Ready = new CudaEvent(CUEventFlags.DisableTiming | CUEventFlags.BlockingSync);
+            availableFrames.Add(slot);
         }
-        finally
-        {
-            av_frame_free(&frame);
-        }
+        Console.WriteLine("[NvidiaGpuFFmpegEncoder] OpenGL texture -> asynchronous CUDA copies -> queued NVENC/mux");
     }
 
     private void InitializeCudaFrames()
     {
-        AVBufferRef* deviceRef = null;
-        ThrowIfError(av_hwdevice_ctx_create(&deviceRef, AVHWDeviceType.AV_HWDEVICE_TYPE_CUDA, null, null, 0), "Could not create FFmpeg CUDA device");
-        cudaDeviceRef = deviceRef;
-
+        fixed (AVBufferRef** device = &cudaDeviceRef)
+            ThrowIfError(av_hwdevice_ctx_create(device, AVHWDeviceType.AV_HWDEVICE_TYPE_CUDA, null, null, 0), "Could not create CUDA device");
+        cudaContext = NvidiaCudaInterop.GetCudaContext(cudaDeviceRef);
+        using (NvidiaCudaInterop.PushContext(cudaContext))
+        {
+            transferStream = new CudaStream(CUStreamFlags.NonBlocking);
+            cudaStream = transferStream.Stream;
+        }
         cudaFramesRef = av_hwframe_ctx_alloc(cudaDeviceRef);
         if (cudaFramesRef == null)
-            throw new InvalidOperationException("Could not allocate CUDA frames context.");
-
+            throw new InvalidOperationException("Could not allocate CUDA frames context");
         var framesContext = (AVHWFramesContext*)cudaFramesRef->data;
         framesContext->format = AVPixelFormat.AV_PIX_FMT_CUDA;
         framesContext->sw_format = AVPixelFormat.AV_PIX_FMT_NV12;
         framesContext->width = Config.Resolution.Width;
         framesContext->height = Config.Resolution.Height;
         framesContext->initial_pool_size = 4;
-
         ThrowIfError(av_hwframe_ctx_init(cudaFramesRef), "Could not initialize CUDA frames context");
-
         codecContext->hw_frames_ctx = av_buffer_ref(cudaFramesRef);
         if (codecContext->hw_frames_ctx == null)
-            throw new InvalidOperationException("Could not reference CUDA frames context.");
-
-        cudaContext = NvidiaCudaInterop.GetCudaContext(cudaDeviceRef);
-        cudaStream = NvidiaCudaInterop.GetCudaStream(cudaDeviceRef);
+            throw new InvalidOperationException("Could not reference CUDA frames context");
     }
 
-    private Dictionary<string, string> GetEncoderOptions()
+    protected override void _writeFrameInternal(ReadOnlySpan<byte> frame) =>
+        throw new NotSupportedException("NVIDIA GPU encoder accepts OpenGL textures only");
+
+    public void PrepareOpenGLTexture(int textureId)
     {
-        var dict = new Dictionary<string, string>
+        lock (producerLock)
         {
-            ["preset"] = Config.Preset,
-            ["rc"] = "constqp",
-            ["qp"] = "21",
-        };
-
-        return dict;
-    }
-
-    private void CopyTextureToFrame(int textureId, AVFrame* frame)
-    {
-        using var _ = NvidiaCudaInterop.PushContext(cudaContext);
-
-        if (registeredTexture == null || registeredTextureId != textureId)
-        {
-            registeredTexture?.Dispose();
-            registeredTexture = new CudaOpenGLImageInteropResource(
-                (uint)textureId,
-                CUGraphicsRegisterFlags.ReadOnly,
-                (CudaOpenGLImageInteropResource.OpenGLImageTarget)gl_texture_2d);
-            registeredTextureId = textureId;
+            worker?.ThrowIfFaulted();
+            if (!acceptingFrames || !textures.TryGetValue(textureId, out var texture) || !texture.HasCopy)
+                return;
+            using var contextScope = NvidiaCudaInterop.PushContext(cudaContext);
+            texture.Ready.Synchronize();
         }
+    }
 
-        registeredTexture.Map(cudaStream);
+    public void WriteOpenGLTexture(int textureId, int width, int height, PixelFormatMode pixelFormat)
+    {
+        lock (producerLock)
+        {
+            worker?.ThrowIfFaulted();
+            if (!acceptingFrames)
+                return;
+            if (!AcceptsOpenGLTexture(pixelFormat) || width != Config.Resolution.Width || height != Config.Resolution.Height * 3 / 2)
+                throw new InvalidOperationException($"Unexpected NV12 texture size or format: {width}x{height}, {pixelFormat}");
+            FrameSlot slot = null;
+            try
+            {
+                slot = availableFrames.Take(worker.CancellationToken);
+                slot.CopyCompleted = false;
+                ThrowIfError(av_hwframe_get_buffer(cudaFramesRef, slot.Frame, 0), "Could not acquire CUDA frame");
+                CopyTextureToFrame(textureId, slot);
+                slot.Frame->pts = pts++;
+                worker.Submit(new WorkItem(slot));
+                slot = null;
+            }
+            catch (OperationCanceledException)
+            {
+                worker.ThrowIfFaulted();
+                throw;
+            }
+            finally
+            {
+                if (slot != null)
+                {
+                    using var contextScope = NvidiaCudaInterop.PushContext(cudaContext);
+                    NvidiaCudaInterop.StreamSynchronize(cudaStream);
+                    av_frame_unref(slot.Frame);
+                    availableFrames.Add(slot);
+                }
+            }
+        }
+    }
+
+    private void CopyTextureToFrame(int textureId, FrameSlot slot)
+    {
+        using var contextScope = NvidiaCudaInterop.PushContext(cudaContext);
+        if (!textures.TryGetValue(textureId, out var texture))
+        {
+            if (textures.Count == TextureBufferCount)
+                throw new InvalidOperationException("The OpenGL texture ring exceeded its capacity");
+            texture = new TextureRegistration();
+            textures.Add(textureId, texture);
+            texture.Ready = new CudaEvent(CUEventFlags.DisableTiming | CUEventFlags.BlockingSync);
+            texture.Resource = new CudaOpenGLImageInteropResource((uint)textureId, CUGraphicsRegisterFlags.ReadOnly,
+                (CudaOpenGLImageInteropResource.OpenGLImageTarget)gl_texture_2d);
+        }
+        texture.Resource.Map(cudaStream);
         try
         {
-            var source = registeredTexture.GetMappedCUArray(0, 0);
-            var height = Config.Resolution.Height;
-            var width = Config.Resolution.Width;
-            var yPlane = new IntPtr(frame->data[0]);
-            var uvPlane = frame->data[1] != null
-                ? new IntPtr(frame->data[1])
-                : IntPtr.Add(yPlane, frame->linesize[0] * height);
-
-            NvidiaCudaInterop.CopyArrayToDevice2D(source, 0, yPlane, frame->linesize[0], width, height);
-            NvidiaCudaInterop.CopyArrayToDevice2D(source, height, uvPlane, frame->linesize[1], width, height / 2);
+            var source = texture.Resource.GetMappedCUArray(0, 0);
+            int height = Config.Resolution.Height;
+            int width = Config.Resolution.Width;
+            var yPlane = new IntPtr(slot.Frame->data[0]);
+            var uvPlane = slot.Frame->data[1] != null ? new IntPtr(slot.Frame->data[1]) : IntPtr.Add(yPlane, slot.Frame->linesize[0] * height);
+            int uvPitch = slot.Frame->linesize[1] > 0 ? slot.Frame->linesize[1] : slot.Frame->linesize[0];
+            NvidiaCudaInterop.CopyArrayToDevice2DAsync(source, 0, yPlane, slot.Frame->linesize[0], width, height, cudaStream);
+            NvidiaCudaInterop.CopyArrayToDevice2DAsync(source, height, uvPlane, uvPitch, width, height / 2, cudaStream);
         }
         finally
         {
-            registeredTexture.UnMap(cudaStream);
+            texture.Resource.UnMap(cudaStream);
+        }
+        texture.Ready.Record(cudaStream);
+        texture.HasCopy = true;
+        slot.Ready.Record(cudaStream);
+    }
+
+    public void WriteAudio(ReadOnlySpan<byte> pcm)
+    {
+        lock (producerLock)
+        {
+            worker?.ThrowIfFaulted();
+            if (!acceptingFrames)
+                return;
+            if (audioSampleRate == 0)
+                throw new InvalidOperationException("Audio was not configured");
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(pcm.Length);
+            try
+            {
+                pcm.CopyTo(buffer);
+                worker.Submit(new WorkItem(buffer, pcm.Length));
+                buffer = null;
+            }
+            finally
+            {
+                if (buffer != null)
+                    ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
     }
 
-    private void EncodeFrame(AVFrame* frame)
+    private void ProcessItem(WorkItem item)
     {
-        ThrowIfError(avcodec_send_frame(codecContext, frame), "Failed to send frame");
-        ReceivePackets();
+        if (item.Video != null)
+        {
+            using var contextScope = NvidiaCudaInterop.PushContext(cudaContext);
+            item.Video.Ready.Synchronize();
+            item.Video.CopyCompleted = true;
+            packetPump.Send((IntPtr)item.Video.Frame);
+        }
+        else
+        {
+            audioMuxer.Write(item.Audio.AsSpan(0, item.AudioLength));
+        }
     }
 
-    private void ReceivePackets()
+    private void ReleaseItem(WorkItem item)
     {
-        AVPacket* packet = av_packet_alloc();
-        if (packet == null)
-            throw new InvalidOperationException("Could not allocate packet.");
-
-        try
+        if (item.Video != null)
         {
-            while (true)
-            {
-                int ret = avcodec_receive_packet(codecContext, packet);
-                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-                    break;
+            using var contextScope = NvidiaCudaInterop.PushContext(cudaContext);
+            if (!item.Video.CopyCompleted)
+                item.Video.Ready.Synchronize();
+            av_frame_unref(item.Video.Frame);
+            availableFrames.Add(item.Video);
+        }
+        else
+        {
+            ArrayPool<byte>.Shared.Return(item.Audio);
+        }
+    }
 
-                ThrowIfError(ret, "Error during encoding");
+    private int ReceivePackets(out int state)
+    {
+        int count = 0;
+        while (true)
+        {
+            state = avcodec_receive_packet(codecContext, packet);
+            if (state == AVERROR(EAGAIN) || state == AVERROR_EOF)
+                return count;
+            ThrowIfError(state, "Could not receive encoded packet");
+            try
+            {
+                // Preserve the final CFR sample when the encoder omits its duration
+                if (packet->duration <= 0)
+                    packet->duration = 1;
                 av_packet_rescale_ts(packet, codecContext->time_base, videoStream->time_base);
                 packet->stream_index = videoStream->index;
-                ThrowIfError(av_interleaved_write_frame(formatContext, packet), "Failed to write packet");
+                ThrowIfError(av_interleaved_write_frame(formatContext, packet), "Could not mux video packet");
+                count++;
+            }
+            finally
+            {
                 av_packet_unref(packet);
             }
         }
-        finally
-        {
-            av_packet_free(&packet);
-        }
+    }
+
+    private void FinalizeEncoder()
+    {
+        packetPump.Send(IntPtr.Zero);
+        audioMuxer?.Finish();
+        ThrowIfError(av_write_trailer(formatContext), "Could not write output trailer");
     }
 
     protected override void _finishInternal()
     {
-        acceptingFrames = false;
-        
-        if (codecContext == null)
-            return;
-
-        try
+        lock (producerLock)
         {
-            avcodec_send_frame(codecContext, null);
-            ReceivePackets();
-            av_write_trailer(formatContext);
+            if (finished)
+                return;
+            finished = true;
+            acceptingFrames = false;
         }
-        finally
+        try { worker?.Dispose(); }
+        finally { availableFrames.Dispose(); }
+    }
+
+    private void ReleaseResources()
+    {
+        lock (producerLock)
         {
-            if (registeredTexture != null)
+            acceptingFrames = false;
+            ExceptionDispatchInfo cleanupFailure = null;
+            void Release(Action action)
             {
-                using (NvidiaCudaInterop.PushContext(cudaContext))
-                    registeredTexture.Dispose();
+                try { action(); }
+                catch (Exception exception) { cleanupFailure ??= ExceptionDispatchInfo.Capture(exception); }
             }
-
-            registeredTexture = null;
-            registeredTextureId = 0;
-
-            if (codecContext != null)
+            if (cudaContext.Pointer != IntPtr.Zero)
             {
-                avcodec_close(codecContext);
-                fixed (AVCodecContext** ctx = &codecContext)
-                    avcodec_free_context(ctx);
+                IDisposable contextScope = null;
+                Release(() => contextScope = NvidiaCudaInterop.PushContext(cudaContext));
+                if (transferStream != null)
+                    Release(() => NvidiaCudaInterop.StreamSynchronize(cudaStream));
+                foreach (var texture in textures.Values)
+                {
+                    Release(() => texture.Resource?.Dispose());
+                    Release(() => texture.Ready?.Dispose());
+                }
+                textures.Clear();
+                foreach (var slot in frameSlots)
+                    Release(() => slot.Ready?.Dispose());
+                Release(() => transferStream?.Dispose());
+                transferStream = null;
+                Release(() => contextScope?.Dispose());
             }
-
-            if (cudaFramesRef != null)
+            foreach (var slot in frameSlots)
             {
-                AVBufferRef* framesRef = cudaFramesRef;
-                av_buffer_unref(&framesRef);
-                cudaFramesRef = null;
+                AVFrame* frame = slot.Frame;
+                av_frame_free(&frame);
             }
-
-            if (cudaDeviceRef != null)
-            {
-                AVBufferRef* deviceRef = cudaDeviceRef;
-                av_buffer_unref(&deviceRef);
-                cudaDeviceRef = null;
-            }
-
+            frameSlots.Clear();
+            Release(() => audioMuxer?.Dispose());
+            audioMuxer = null;
+            fixed (AVPacket** packetPointer = &packet) av_packet_free(packetPointer);
+            fixed (AVCodecContext** codec = &codecContext) avcodec_free_context(codec);
+            fixed (AVBufferRef** frames = &cudaFramesRef) av_buffer_unref(frames);
+            fixed (AVBufferRef** device = &cudaDeviceRef) av_buffer_unref(device);
             if (formatContext != null)
             {
-                if ((formatContext->oformat->flags & AVFMT_NOFILE) == 0 && formatContext->pb != null)
-                    avio_closep(&formatContext->pb);
-
+                if (formatContext->pb != null)
+                    Release(() => ThrowIfError(avio_closep(&formatContext->pb), "Could not close output file"));
                 avformat_free_context(formatContext);
+                formatContext = null;
             }
-
-            formatContext = null;
-            codecContext = null;
             videoStream = null;
-            pts = 0;
+            cleanupFailure?.Throw();
         }
     }
+
+    public void Dispose() => Finish();
 
     private static void ThrowIfError(int error, string message)
     {
         if (error >= 0)
             return;
-
         const int bufferSize = 1024;
         byte* buffer = stackalloc byte[bufferSize];
         av_strerror(error, buffer, (ulong)bufferSize);

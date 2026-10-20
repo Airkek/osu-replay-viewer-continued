@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../osu-replay-viewer/CustomHosts/Record/EncoderBase.cs" Link="EncoderBase.cs" />
+    <Compile Include="../../osu-replay-viewer/CustomHosts/Record/IFrameLease.cs" Link="IFrameLease.cs" />
+    <Compile Include="../../osu-replay-viewer/CustomHosts/Record/IOwnedFrameEncoder.cs" Link="IOwnedFrameEncoder.cs" />
+    <Compile Include="../../osu-replay-viewer/CustomHosts/Record/IOpenGLTextureEncoder.cs" Link="IOpenGLTextureEncoder.cs" />
+    <Compile Include="../../osu-replay-viewer/Record/MappedFrameLease.cs" Link="MappedFrameLease.cs" />
+    <Compile Include="../../osu-replay-viewer/Record/PboFrameRing.cs" Link="PboFrameRing.cs" />
+    <Compile Include="../../osu-replay-viewer/Record/RenderWrapper.cs" Link="RenderWrapper.cs" />
+    <Compile Include="../../osu-replay-viewer/Record/GLRendererWrapper.cs" Link="GLRendererWrapper.cs" />
+    <Compile Include="../../osu-replay-viewer/Record/VeldridDeviceWrapper.cs" Link="VeldridDeviceWrapper.cs" />
+    <PackageReference Include="ppy.osu.Framework" Version="2026.921.1" />
+  </ItemGroup>
+</Project>
