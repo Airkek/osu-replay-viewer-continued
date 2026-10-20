@@ -83,7 +83,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
             }
         }
 
-        private static bool IsContinuous(MusicPlaybackSegment previous, MusicPlaybackSegment next, int sampleRate)
+        internal static bool IsContinuous(MusicPlaybackSegment previous, MusicPlaybackSegment next, int sampleRate)
         {
             if (previous.OutputEndSample != next.OutputStartSample) return false;
             double expectedSource = previous.SourceStartSeconds +
@@ -148,29 +148,35 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                 long wantedBytes = checked(wantedFrames * channels * sizeof(float));
                 RunFFmpeg(ffmpegExec, directory, sampleRate, channels, filter, wantedBytes, rendered =>
                 {
-                    for (int index = first; index < end; index++)
-                    {
-                        var segment = segments[index];
-                        long count = segment.OutputEndSample - segment.OutputStartSample;
-                        double start = segment.SourceStartSeconds * sampleRate;
-                        double rate = segment.Frequency * segment.Tempo;
-                        long validStart = ClampCeiling(-start / rate, count);
-                        long validEnd = ClampCeiling((source.Length - start) / rate, count);
-                        if (validEnd <= validStart)
-                        {
-                            CopyPcm(rendered, null, checked(count * channels * sizeof(float)), buffer);
-                            continue;
-                        }
-                        CopyPcm(rendered, null, checked(validStart * channels * sizeof(float)), buffer);
-                        output.Position = checked((segment.OutputStartSample + validStart) * channels * sizeof(float));
-                        CopyPcm(rendered, output, checked((validEnd - validStart) * channels * sizeof(float)), buffer);
-                        CopyPcm(rendered, null, checked((count - validEnd) * channels * sizeof(float)), buffer);
-                    }
+                    CopyRenderedRun(source.Length, sampleRate, channels, segments, first, end, rendered, output, buffer);
                 });
             }
             finally
             {
                 Directory.Delete(directory, true);
+            }
+        }
+
+        internal static void CopyRenderedRun(long sourceLength, int sampleRate, int channels,
+            IReadOnlyList<MusicPlaybackSegment> segments, int first, int end, Stream rendered, Stream output, float[] buffer)
+        {
+            for (int index = first; index < end; index++)
+            {
+                var segment = segments[index];
+                long count = segment.OutputEndSample - segment.OutputStartSample;
+                double start = segment.SourceStartSeconds * sampleRate;
+                double rate = segment.Frequency * segment.Tempo;
+                long validStart = ClampCeiling(-start / rate, count);
+                long validEnd = ClampCeiling((sourceLength - start) / rate, count);
+                if (validEnd <= validStart)
+                {
+                    CopyPcm(rendered, null, checked(count * channels * sizeof(float)), buffer);
+                    continue;
+                }
+                CopyPcm(rendered, null, checked(validStart * channels * sizeof(float)), buffer);
+                output.Position = checked((segment.OutputStartSample + validStart) * channels * sizeof(float));
+                CopyPcm(rendered, output, checked((validEnd - validStart) * channels * sizeof(float)), buffer);
+                CopyPcm(rendered, null, checked((count - validEnd) * channels * sizeof(float)), buffer);
             }
         }
 

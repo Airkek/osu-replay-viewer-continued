@@ -84,6 +84,11 @@ namespace osu_replay_renderer_netcore.CustomHosts
         private double sampleGain;
 
         private FFmpegMusicSource musicSource;
+        private BackgroundMusicRenderer backgroundMusic;
+        private bool backgroundMusicAttempted;
+        internal int BackgroundMusicWorkerStarts;
+        internal int BackgroundMusicAccepted;
+        internal int BackgroundMusicFallbacks;
         private bool isAudioPlayed = false;
         public bool NeedAudio => isAudioPatched && musicSource is null;
 
@@ -109,6 +114,9 @@ namespace osu_replay_renderer_netcore.CustomHosts
 
         internal void SetMusicSource(FFmpegMusicSource source)
         {
+            backgroundMusic?.Dispose();
+            backgroundMusic = null;
+            backgroundMusicAttempted = false;
             musicSource?.Dispose();
             musicSource = source;
             audioFormat = source.Format.CreateCopy();
@@ -120,7 +128,11 @@ namespace osu_replay_renderer_netcore.CustomHosts
         {
             try
             {
-                if (disposing) musicSource?.Dispose();
+                if (disposing)
+                {
+                    try { backgroundMusic?.Dispose(); }
+                    finally { musicSource?.Dispose(); }
+                }
             }
             finally
             {
@@ -152,7 +164,22 @@ namespace osu_replay_renderer_netcore.CustomHosts
             var segment = MusicPlaybackSegment.FromClockInterval(outputStart, sourceStart, duration,
                 frequency, tempo, audioFormat.SampleRate);
             if (segment.OutputEndSample > segment.OutputStartSample)
+            {
                 musicSegments.Add(segment);
+                if (!backgroundMusicAttempted)
+                {
+                    backgroundMusicAttempted = true;
+                    if (musicSource != null && BackgroundMusicRenderer.CanStart(segment))
+                    {
+                        backgroundMusic = new BackgroundMusicRenderer(audioFormat, musicSource.CreateIndependent,
+                            segment, encoder.Config.FFmpegExec);
+                        BackgroundMusicWorkerStarts++;
+                        Console.WriteLine("Background music worker: started");
+                    }
+                }
+                else
+                    backgroundMusic?.Observe(segment);
+            }
         }
 
         public void StartRecording()
@@ -198,7 +225,33 @@ namespace osu_replay_renderer_netcore.CustomHosts
                     long samples = CurrentOutputSample;
                     string musicPath = Path.Combine(directory, "music.f32");
                     using (musicSource)
-                        DynamicMusicRenderer.Render(musicSource, musicSegments, samples, musicPath, encoder.Config.FFmpegExec);
+                    {
+                        bool prepared = false;
+                        if (backgroundMusic != null)
+                        {
+                            try
+                            {
+                                prepared = backgroundMusic.TryComplete(musicSegments.ToArray(), samples, musicPath, out string reason);
+                                if (prepared)
+                                {
+                                    BackgroundMusicAccepted++;
+                                    Console.WriteLine("Background music worker: accepted");
+                                }
+                                else
+                                {
+                                    BackgroundMusicFallbacks++;
+                                    Console.WriteLine($"Background music worker: fallback ({reason})");
+                                }
+                            }
+                            finally
+                            {
+                                backgroundMusic.Dispose();
+                                backgroundMusic = null;
+                            }
+                        }
+                        if (!prepared)
+                            DynamicMusicRenderer.Render(musicSource, musicSegments, samples, musicPath, encoder.Config.FFmpegExec);
+                    }
                     var audioEncoder = new ExternalAudioEncoder(Path.Combine(directory, "audio.m4a"),
                         audioFormat.SampleRate, audioFormat.Channels, encoder.Config.FFmpegExec);
                     audioEncoder.Start();

@@ -7,6 +7,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using osu_replay_renderer_netcore.Audio.Conversion;
 
@@ -28,6 +29,8 @@ namespace osu_replay_renderer_netcore.Audio
         private long remainingBytes = long.MaxValue;
         private long emptyFrom = long.MaxValue;
         private bool disposed;
+        private readonly CancellationToken cancellationToken;
+        private CancellationTokenRegistration decoderCancellation;
 
         public AudioFormat Format { get; }
         public long Length { get; private set; } = long.MaxValue;
@@ -53,7 +56,7 @@ namespace osu_replay_renderer_netcore.Audio
             public CacheBlock(int channels) => Values = new float[checked(blockFrames * channels)];
         }
 
-        public FFmpegMusicSource(string path, string ffmpegExec, double volume = 1)
+        public FFmpegMusicSource(string path, string ffmpegExec, double volume = 1, CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(path);
             ArgumentException.ThrowIfNullOrWhiteSpace(ffmpegExec);
@@ -61,6 +64,7 @@ namespace osu_replay_renderer_netcore.Audio
             this.path = Path.GetFullPath(path);
             executable = ffmpegExec.Contains('/') || ffmpegExec.Contains('\\') ? Path.GetFullPath(ffmpegExec) : ffmpegExec;
             this.volume = volume;
+            this.cancellationToken = cancellationToken;
             try
             {
                 Format = OpenInitialDecoder();
@@ -74,6 +78,9 @@ namespace osu_replay_renderer_netcore.Audio
                 throw;
             }
         }
+
+        internal FFmpegMusicSource CreateIndependent(CancellationToken cancellationToken) =>
+            new(path, executable, volume, cancellationToken);
 
         public void ReadFrames(long firstFrame, Span<float> output)
         {
@@ -234,6 +241,11 @@ namespace osu_replay_renderer_netcore.Audio
             try
             {
                 process.Start();
+                decoderCancellation = cancellationToken.Register(() =>
+                {
+                    try { if (!process.HasExited) process.Kill(); }
+                    catch (Exception error) when (error is InvalidOperationException or Win32Exception) { }
+                });
                 DecoderStarts++;
                 return process;
             }
@@ -256,6 +268,7 @@ namespace osu_replay_renderer_netcore.Audio
             }
             finally
             {
+                decoderCancellation.Dispose();
                 process.Dispose();
                 diagnostics = null;
             }
@@ -275,6 +288,7 @@ namespace osu_replay_renderer_netcore.Audio
             }
             finally
             {
+                decoderCancellation.Dispose();
                 process.Dispose();
                 diagnostics = null;
             }
