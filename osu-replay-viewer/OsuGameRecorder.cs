@@ -511,6 +511,7 @@ namespace osu_replay_renderer_netcore
                 recordHost.SetMusicSource(track);
             }
 
+            LocalConfig.SetValue(OsuSetting.GameplayLeaderboard, settings.ShowLeaderboard);
             var leaderboard = settings.ShowLeaderboard ? LoadLeaderboard(score, beatmap) : null;
             Player = new RecorderReplayPlayer(score, HideOverlaysInPlayer, SkipIntro, leaderboard);
             

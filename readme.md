@@ -148,11 +148,15 @@ needed for the client credentials grant. Add these sections to `osu-replay-viewe
 ```
 
 `game_settings.show_leaderboard` defaults to `false`. When enabled, the viewer fetches the
-current map's global top 50 for the replay's ruleset before playback starts, then shows the
-standard lazer leaderboard on the left during viewing and recording, including with hidden
-replay controls. The highlighted replay row follows its live score, accuracy and combo; its
-position updates when scores are overtaken or playback is rewound. A position below the fetched
-top is left unknown when the full leaderboard is larger than the fetched results.
+current map's global top 50 for the replay's ruleset before playback starts and supplies it to
+lazer's existing replay leaderboard provider. The leaderboard is shown during viewing and
+recording through the native HUD and `GameplayLeaderboard` toggle. osu! manages the active skin's
+HUD components and layout itself, including when replay controls are hidden. A skin without a
+leaderboard does not get an extra panel.
+
+The standard replay provider tracks the replay's live score, accuracy and combo and updates its
+position as scores are overtaken or playback is rewound. A position below the fetched top is
+left unknown when the full leaderboard is larger than the fetched results.
 
 The leaderboard is a snapshot taken before playback; it includes stable and lazer scores without
 a mod filter. Missing credentials, unavailable beatmaps, or API errors produce a message and

@@ -1,11 +1,12 @@
 ﻿using osu.Framework.Screens;
+using osu.Framework.Allocation;
+using osu.Framework.Bindables;
 using osu.Game.Rulesets.Mods;
 using osu.Game.Online.Leaderboards;
 using osu.Game.Scoring;
 using osu.Game.Screens.Play;
 using System;
 using System.Linq;
-using osu_replay_renderer_netcore.Online;
 
 namespace osu_replay_renderer_netcore
 {
@@ -16,6 +17,8 @@ namespace osu_replay_renderer_netcore
         public bool HideOverlays { get; private set; } = false;
 
         private readonly LeaderboardScores leaderboard;
+        private readonly Bindable<LeaderboardScores> leaderboardSnapshot;
+        private LeaderboardManager replayLeaderboardManager;
 
         public RecorderReplayPlayer(Score score, bool hideOverlays, bool skipIntro, LeaderboardScores leaderboard = null) : base(score, new PlayerConfiguration
         {
@@ -31,6 +34,20 @@ namespace osu_replay_renderer_netcore
             HideOverlays = hideOverlays;
             this.leaderboard = leaderboard;
             Configuration.ShowLeaderboard = leaderboard != null;
+            if (leaderboard != null)
+                leaderboardSnapshot = new Bindable<LeaderboardScores>(leaderboard);
+        }
+
+        protected override IReadOnlyDependencyContainer CreateChildDependencies(IReadOnlyDependencyContainer parent)
+        {
+            var dependencies = new DependencyContainer(base.CreateChildDependencies(parent));
+            if (leaderboard != null)
+            {
+                replayLeaderboardManager = new LeaderboardManager();
+                replayLeaderboardManager.Scores.BindTo(leaderboardSnapshot);
+                dependencies.CacheAs(replayLeaderboardManager);
+            }
+            return dependencies;
         }
 
         public Action OnFailed;
@@ -57,17 +74,22 @@ namespace osu_replay_renderer_netcore
         protected override void LoadComplete()
         {
             base.LoadComplete();
-            HUDOverlay.ShowHud.Value = false;
+            if (!HUDOverlay.ShowHud.Disabled)
+                HUDOverlay.ShowHud.Value = leaderboard != null;
             HUDOverlay.HoldToQuit.Hide();
-
-            if (leaderboard != null)
-                GameplayClockContainer.Add(new ReplayLeaderboard(leaderboard, GameplayState));
 
             if (HideOverlays)
             {
                 ReplayOverlay.Hide();
                 GameplayClockContainer.RemoveRecursive(v => v is SkipOverlay);
             }
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            base.Dispose(isDisposing);
+            replayLeaderboardManager?.Dispose();
+            leaderboardSnapshot?.UnbindAll();
         }
 
         protected override void StartGameplay()
