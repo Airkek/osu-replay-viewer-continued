@@ -178,6 +178,13 @@ osu!lazer login. You can also provide `OSU_API_CLIENT_ID` and `OSU_API_CLIENT_SE
 variables; they override the corresponding config fields and are not copied into the config.
 The default config filename is ignored by Git because it can contain credentials.
 
+The same credentials also load the replay player's profile before playback and recording,
+independently of `show_leaderboard`. The viewer looks up the player by ID when available, or by
+username for stable `.osr` files, so the native HUD and results screen can display their avatar.
+Without credentials or if the profile request fails, playback continues with the player data
+stored in the replay. Avatar images are downloaded from osu!'s public image servers; a skin must
+include an avatar component for one to appear during gameplay.
+
 ### Download a replay
 
 Use the modern API v2 score ID (`scores[].id`, not `legacy_score_id`):

@@ -80,6 +80,42 @@ public sealed class OsuApiClient : IDisposable
         return document;
     }
 
+    public async Task<JsonDocument> GetUserAsync(int userId, string username, CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        bool byId = userId > 1;
+        if (!byId && string.IsNullOrWhiteSpace(username))
+            throw new ArgumentException("A user ID or username is required", nameof(username));
+
+        string lookup = byId ? userId.ToString(CultureInfo.InvariantCulture) : Uri.EscapeDataString(username);
+        using var request = await createApiRequestAsync($"users/{lookup}?key={(byId ? "id" : "username")}", cancellationToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        ensureSuccess(response, "Player profile request");
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        JsonDocument document;
+        try
+        {
+            document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException("osu! API returned an invalid player profile");
+        }
+
+        var root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("id", out var id) || id.ValueKind != JsonValueKind.Number || !id.TryGetInt32(out int resolvedId) || resolvedId <= 1 ||
+            (byId && resolvedId != userId) ||
+            !root.TryGetProperty("username", out var name) || name.ValueKind != JsonValueKind.String ||
+            string.IsNullOrWhiteSpace(name.GetString()))
+        {
+            document.Dispose();
+            throw new InvalidOperationException("osu! API returned an invalid player profile");
+        }
+        return document;
+    }
+
     public async Task DownloadReplayAsync(long scoreId, string outputPath, bool overwrite = false,
         CancellationToken cancellationToken = default)
     {
