@@ -558,7 +558,7 @@ namespace osu_replay_renderer_netcore
         {
             try
             {
-                ReplayUserResolver.ResolveAsync(score, () => OsuApiCommands.CreateClient(apiOptions)).GetAwaiter().GetResult();
+                ReplayUserResolver.Resolve(score, () => OsuApiCommands.CreateClient(apiOptions));
             }
             catch (CLIException e)
             {

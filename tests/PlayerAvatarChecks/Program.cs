@@ -7,6 +7,31 @@ using osu_replay_renderer_netcore.Online;
 
 int checks = 0;
 
+await Check("profile resolution completes while the game thread cannot pump continuations", async () =>
+{
+    var completion = new TaskCompletionSource<ScoreInfo>(TaskCreationOptions.RunContinuationsAsynchronously);
+    var context = new BlockedGameContext();
+    var thread = new Thread(() =>
+    {
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            var score = LazerScore();
+            using var http = new HttpClient(new ProfileHandler("42", "id"));
+            Resolve(score, () => new OsuApiClient(17, "secret", http)).GetAwaiter().GetResult();
+            completion.SetResult(score);
+        }
+        catch (Exception error)
+        {
+            completion.SetException(error);
+        }
+    }) { IsBackground = true };
+    thread.Start();
+    var resolved = await completion.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(context.Posts == 0, "profile request captured the blocked game context");
+    Assert(resolved.User.OnlineID == 42 && resolved.User.AvatarUrl == "https://a.ppy.sh/42?updated", "profile not applied");
+});
+
 await Check("stable replay resolves its username into the player and avatar used by native UI", async () =>
 {
     var score = new ScoreInfo { User = new APIUser { Username = "12345" } };
@@ -58,9 +83,20 @@ await Check("a replay without a player identity makes no API request", async () 
 
 Console.WriteLine($"{checks} checks passed");
 
-static Task Resolve(ScoreInfo score, Func<OsuApiClient> createClient) => (Task)typeof(GameSettings).Assembly
-    .GetType("osu_replay_renderer_netcore.Online.ReplayUserResolver", true)!
-    .GetMethod("ResolveAsync")!.Invoke(null, [score, createClient])!;
+static Task Resolve(ScoreInfo score, Func<OsuApiClient> createClient)
+{
+    try
+    {
+        typeof(GameSettings).Assembly
+            .GetType("osu_replay_renderer_netcore.Online.ReplayUserResolver", true)!
+            .GetMethod("Resolve")!.Invoke(null, [score, createClient]);
+        return Task.CompletedTask;
+    }
+    catch (System.Reflection.TargetInvocationException error) when (error.InnerException != null)
+    {
+        return Task.FromException(error.InnerException);
+    }
+}
 
 static ScoreInfo LazerScore()
 {
@@ -90,8 +126,9 @@ static async Task Fails(Func<Task> action)
 
 sealed class ProfileHandler(string lookup, string key, HttpStatusCode status = HttpStatusCode.OK) : HttpMessageHandler
 {
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        await Task.Delay(20, cancellationToken).ConfigureAwait(false);
         string body;
         if (request.RequestUri!.AbsolutePath == "/oauth/token")
             body = "{\"access_token\":\"token\",\"token_type\":\"Bearer\",\"expires_in\":3600}";
@@ -103,11 +140,18 @@ sealed class ProfileHandler(string lookup, string key, HttpStatusCode status = H
                 throw new Exception("Missing OAuth token");
             body = "{\"id\":42,\"username\":\"current-name\",\"avatar_url\":\"https://a.ppy.sh/42?updated\"}";
             if (status != HttpStatusCode.OK)
-                return Task.FromResult(new HttpResponseMessage(status));
+                return new HttpResponseMessage(status);
         }
-        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        return new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json")
-        });
+        };
     }
+}
+
+sealed class BlockedGameContext : SynchronizationContext
+{
+    private int posts;
+    public int Posts => Volatile.Read(ref posts);
+    public override void Post(SendOrPostCallback callback, object state) => Interlocked.Increment(ref posts);
 }
