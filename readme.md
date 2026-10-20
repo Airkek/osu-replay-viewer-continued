@@ -268,9 +268,23 @@ For example, this explicitly selects 20 Mbit/s VBR for an NVIDIA Pipe recording 
 
 ### Audio and video recording
 
-Pipe mode uses one external FFmpeg process to encode and mux video and AAC audio directly into the output file. It does not create a temporary audio file or run a final remux pass. Video and PCM audio use separate bounded inputs over loopback TCP; both endpoints are inside the same host/container, so Docker ports do not need to be published.
+All replays use the same audio timeline, including NM, DT/HT, Wind Up/Wind Down, and Adaptive Speed. Video is rendered at the configured constant FPS while gameplay time advances using the live track speed. Music positions, frequency/tempo changes, and hitsound events are recorded during playback. After the video finishes, music and hitsounds are mixed, encoded to AAC, and muxed into the video without re-encoding its frames.
 
-Pipe mode needs an FFmpeg executable with TCP input, AAC encoding, and the selected video encoder. It does not require FFmpeg shared DLLs/`.so` files or `libraries_path`; those are for Binding mode. Existing renderer and GPU driver requirements still apply. Binding encoders also mux audio directly; the separate audio encoder/remux remains a fallback for encoders without integrated audio input.
+Before rendering, only the music format header is read from the FFmpeg decoder. After the video finishes, the same decoder supplies PCM on demand with a bounded cache, avoiding a second process startup for playback from the beginning. Failed scores decode only the portion that was played, and seeks restart decoding at the required source position. Changes that also change pitch use band-limited resampling. Preserving pitch uses FFmpeg's native `rubberband` filter with timestamped tempo/pitch commands; SoundTouch.Net is not used for music. Negative lead-in and time after the end of the source track produce silence. Temporary PCM and AAC files are removed after rendering; allow temporary disk space for the rendered music.
+
+Pipe mode needs an FFmpeg executable with TCP input, AAC encoding, and the selected video encoder. Replays with pitch-preserving speed changes also require the `rubberband` filter (`--enable-librubberband`). Check its availability with `ffmpeg -hide_banner -h filter=rubberband`. Pipe mode does not require FFmpeg shared DLLs/`.so` files or `libraries_path`; those are for Binding mode. Existing renderer and GPU driver requirements still apply.
+
+Run the audio and clock checks with .NET 10:
+
+```sh
+dotnet run --project tests/ClockChecks -c Release
+dotnet run --project tests/AudioPipelineChecks -c Release
+dotnet run --project tests/DynamicMusicChecks -c Release
+ORV_FFMPEG=/path/to/ffmpeg dotnet run --project tests/AudioTimelineChecks -c Release
+ORV_FFMPEG=/path/to/ffmpeg dotnet run --project tests/StreamingMusicChecks -c Release
+```
+
+Set `ORV_FFMPEG=/path/to/ffmpeg` for audio codec integration checks. For the native dynamic tempo and transient timing checks, also set `ORV_FFMPEG_HAS_RUBBERBAND=1` when running `tests/DynamicMusicChecks` with a Rubber Band-enabled FFmpeg build.
 
 ### Encoder regression checks
 

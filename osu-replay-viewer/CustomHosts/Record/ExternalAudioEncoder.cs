@@ -28,22 +28,20 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
 
         public void Start()
         {
-            // We use aac for speed and compatibility.
-            // Input: raw PCM, s16le (signed 16-bit little endian), stereo (or whatever channels), sample rate
-            string args = $"-y -f s16le -ar {SampleRate} -ac {Channels} -i pipe: -c:a aac -b:a 192k \"{OutputPath}\"";
-            
-            Console.WriteLine("Starting Audio FFmpeg process with arguments: " + args);
             FFmpeg = new Process
             {
                 StartInfo =
                 {
                     UseShellExecute = false,
                     FileName = FFmpegExec,
-                    Arguments = args,
                     RedirectStandardInput = true,
                     CreateNoWindow = true
                 }
             };
+            foreach (string argument in new[] { "-y", "-f", "s16le", "-ar", SampleRate.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                "-ac", Channels.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", "pipe:", "-c:a", "aac", "-b:a", "192k", OutputPath })
+                FFmpeg.StartInfo.ArgumentList.Add(argument);
+            Console.WriteLine($"Starting audio encoder: {OutputPath}");
             FFmpeg.Start();
             InputStream = FFmpeg.StandardInput.BaseStream;
         }
@@ -78,8 +76,11 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
             }
             if (FFmpeg != null)
             {
-                FFmpeg.WaitForExit();
+                using var process = FFmpeg;
                 FFmpeg = null;
+                process.WaitForExit();
+                if (process.ExitCode != 0)
+                    throw new InvalidDataException($"FFmpeg audio encode failed with exit code {process.ExitCode}");
             }
         }
     }

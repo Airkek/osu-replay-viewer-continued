@@ -8,13 +8,15 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="../../osu-replay-viewer/Audio/AudioBuffer.cs" Link="AudioBuffer.cs" />
+    <Compile Include="../../osu-replay-viewer/Audio/IPcmSource.cs" Link="IPcmSource.cs" />
     <Compile Include="../../osu-replay-viewer/Audio/AudioFormat.cs" Link="AudioFormat.cs" />
     <Compile Include="../../osu-replay-viewer/Audio/SamplePcmCache.cs" Link="SamplePcmCache.cs" />
     <Compile Include="../../osu-replay-viewer/Audio/StreamingAudioMixer.cs" Link="StreamingAudioMixer.cs" />
+    <Compile Include="../../osu-replay-viewer/Audio/RecordedAudioMixer.cs" Link="RecordedAudioMixer.cs" />
     <Compile Include="../../osu-replay-viewer/Audio/Conversion/FloatWaveReader.cs" Link="FloatWaveReader.cs" />
     <Compile Include="../../osu-replay-viewer/Audio/Conversion/FFmpegAudioTools.cs" Link="FFmpegAudioTools.cs" />
     <Compile Include="../../osu-replay-viewer/CustomHosts/Record/ExternalAudioEncoder.cs" Link="ExternalAudioEncoder.cs" />
     <PackageReference Include="SoundTouch.Net" Version="2.3.2" />
-    <PackageReference Include="ManagedBass" Version="3.1.1" />
+    <PackageReference Include="ppy.ManagedBass" Version="2022.1216.0" />
   </ItemGroup>
 </Project>

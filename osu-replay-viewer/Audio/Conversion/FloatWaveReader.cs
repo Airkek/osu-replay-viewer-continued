@@ -10,6 +10,12 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
     {
         public static AudioBuffer Read(Stream stream)
         {
+            var header = ReadHeader(stream);
+            return ReadPcm(stream, header.Format, header.DataBytes);
+        }
+
+        public static (AudioFormat Format, uint DataBytes) ReadHeader(Stream stream)
+        {
             Span<byte> header = stackalloc byte[12];
             stream.ReadExactly(header);
             if (!header[..4].SequenceEqual("RIFF"u8) || !header[8..].SequenceEqual("WAVE"u8))
@@ -33,7 +39,7 @@ namespace osu_replay_renderer_netcore.Audio.Conversion
                 {
                     if (format == null)
                         throw new InvalidDataException("WAVE format must precede PCM data");
-                    return ReadPcm(stream, format, size);
+                    return (format, size);
                 }
                 else
                 {

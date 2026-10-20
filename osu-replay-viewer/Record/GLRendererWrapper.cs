@@ -202,10 +202,10 @@ public class GLRendererWrapper : RenderWrapper
         Console.WriteLine($"[GLRendererWrapper] Initialized with pixel format: {pixelFormat}, color space: {colorSpace}");
     }
 
-    public override void WriteFrame(EncoderBase encoder)
+    public override bool WriteFrame(EncoderBase encoder)
     {
         var size = surface.GetDrawableSize();
-        if (size.Width != DesiredSize.Width || size.Height != DesiredSize.Height) return;
+        if (size.Width != DesiredSize.Width || size.Height != DesiredSize.Height) return false;
 
         WithGLContext(() =>
         {
@@ -218,6 +218,7 @@ public class GLRendererWrapper : RenderWrapper
                 WriteFrameYUV(encoder, size);
             }
         });
+        return true;
     }
 
     private unsafe void WriteFrameYUV(EncoderBase encoder, Size size)

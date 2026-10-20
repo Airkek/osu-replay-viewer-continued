@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../osu-replay-viewer/CustomHosts/CustomClocks/WrappedClock.cs" Link="WrappedClock.cs" />
+    <ProjectReference Include="../../submodules/osu/osu.Game/osu.Game.csproj" />
+  </ItemGroup>
+</Project>
