@@ -83,7 +83,7 @@ namespace osu_replay_renderer_netcore
                     osuGameName = new()
                     {
                         Name = "osu!lazer mode",
-                        Description = "Use osu!lazer data (songs, skins, replays), possible data loss!",
+                        Description = "Use osu!lazer data through a private snapshot; only archive imports write to osu!",
                         DoubleDashes = new[] { "osu-mode" },
                         SingleDash = new[] { "osu" }
                     },
@@ -473,8 +473,11 @@ namespace osu_replay_renderer_netcore
                 return;
             }
 
+            SafeRealmPatcher safeRealm = null;
+
             try
             {
+                safeRealm = osuGameName.Triggered ? new SafeRealmPatcher() : null;
                 host.Run(game);
             }
             finally
@@ -485,7 +488,14 @@ namespace osu_replay_renderer_netcore
                 }
                 finally
                 {
-                    encoderLifetime?.Dispose();
+                    try
+                    {
+                        encoderLifetime?.Dispose();
+                    }
+                    finally
+                    {
+                        safeRealm?.Dispose();
+                    }
                 }
             }
         }
