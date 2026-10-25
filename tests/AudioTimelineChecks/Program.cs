@@ -100,6 +100,45 @@ try
         Assert(failed, "missing mux input did not fail");
         Assert(SHA256.HashData(File.ReadAllBytes(videoPath)).AsSpan().SequenceEqual(before), "mux failure changed the source video");
     });
+    Check("missing beatmap music preserves hitsounds or silence through AAC and MP4 mux", () =>
+    {
+        foreach (bool withHitsounds in new[] { true, false })
+        {
+            var format = new AudioFormat();
+            var mixer = new RecordedAudioMixer(format);
+            if (withHitsounds)
+                foreach (double at in effectMarkers)
+                    mixer.StartVoice((long)Math.Round(at * format.SampleRate), impulse, 1);
+
+            string suffix = withHitsounds ? "hitsounds" : "silence";
+            string missingMusicAudio = Path.Combine(directory, $"{suffix}.m4a");
+            string missingMusicOutput = Path.Combine(directory, $"{suffix}.mp4");
+            var encoder = new ExternalAudioEncoder(missingMusicAudio, format.SampleRate, format.Channels, ffmpeg);
+            encoder.Start();
+            try
+            {
+                mixer.Render(format.SampleRate * 2, null, 1, encoder.Write);
+            }
+            finally
+            {
+                encoder.Finish();
+            }
+            FFmpegAudioTools.MuxAudioVideo(videoPath, missingMusicAudio, missingMusicOutput);
+            var audio = FFmpegAudioTools.Decode(missingMusicOutput);
+            Assert(audio.Format.SampleRate == format.SampleRate && audio.Format.Channels == 2, "missing music changed the fallback format");
+            Assert(audio.Samples >= format.SampleRate * 2 && audio.Samples - format.SampleRate * 2 < 1024,
+                "missing music shortened the audio timeline");
+            if (withHitsounds)
+                foreach (double at in effectMarkers)
+                    AssertMarker(audio, 1, at, "hitsound without music");
+            for (int frame = 0; frame < audio.Samples; frame++)
+            {
+                Assert(Math.Abs(audio[0, frame]) < .0001f, "missing music introduced sound on the music channel");
+                if (!withHitsounds)
+                    Assert(Math.Abs(audio[1, frame]) < .0001f, "empty beatmap audio was not silent");
+            }
+        }
+    });
     Console.WriteLine($"Passed {passed} audio timeline checks");
 }
 finally
@@ -117,8 +156,8 @@ void Check(string name, Action action)
 
 void AssertMarker(AudioBuffer buffer, int channel, double seconds, string label)
 {
-    int expected = (int)Math.Round(seconds * sampleRate);
-    int radius = sampleRate / 16;
+    int expected = (int)Math.Round(seconds * buffer.Format.SampleRate);
+    int radius = buffer.Format.SampleRate / 16;
     int peak = expected;
     float amplitude = 0;
     for (int frame = Math.Max(0, expected - radius); frame < Math.Min(buffer.Samples, expected + radius); frame++)
@@ -130,7 +169,7 @@ void AssertMarker(AudioBuffer buffer, int channel, double seconds, string label)
             peak = frame;
         }
     }
-    double offsetMs = (peak - expected) * 1000d / sampleRate;
+    double offsetMs = (peak - expected) * 1000d / buffer.Format.SampleRate;
     Assert(amplitude > .05f, $"{label} marker at {seconds}s disappeared");
     Assert(Math.Abs(offsetMs) <= 1, $"{label} marker at {seconds}s shifted by {offsetMs:R}ms");
     Console.WriteLine($"{label} marker {seconds:F2}s: offset {offsetMs:F3}ms");

@@ -45,6 +45,8 @@ namespace osu_replay_renderer_netcore
 {
     partial class OsuGameRecorder : OsuGameBase
     {
+        protected override int UnhandledExceptionsBeforeCrash => 0;
+
         public List<string> ModsOverride = new();
 
         RecorderScreenStack ScreenStack;
@@ -234,7 +236,12 @@ namespace osu_replay_renderer_netcore
 
         public string GetCurrentBeatmapAudioPath()
         {
-            return Storage.GetFullPath(@"files" + Path.DirectorySeparatorChar + Beatmap.Value.BeatmapSetInfo.GetPathForFile(Beatmap.Value.Metadata.AudioFile));
+            string relativePath = Beatmap.Value.BeatmapSetInfo.GetPathForFile(Beatmap.Value.Metadata.AudioFile);
+            if (relativePath == null)
+                return null;
+
+            string path = Storage.GetFullPath(Path.Combine("files", relativePath));
+            return File.Exists(path) ? path : null;
         }
 
         protected override void LoadComplete()
@@ -502,16 +509,25 @@ namespace osu_replay_renderer_netcore
 
             if (Host is ReplayRecordGameHost recordHost && recordHost.NeedAudio)
             {
-                var volumeMusic = config.Get<double>(FrameworkSetting.VolumeMusic);
-                var volumeUniversal = config.Get<double>(FrameworkSetting.VolumeUniversal);
-                
-                Console.WriteLine("Reading audio format...");
-                sw.Restart();
-                var track = new FFmpegMusicSource(GetCurrentBeatmapAudioPath(), FFmpegAudioTools.FFmpegExec,
-                    volumeMusic * volumeUniversal);
-                sw.Stop();
-                Console.WriteLine($"Audio format loaded in {sw.ElapsedMilliseconds}ms");
-                recordHost.SetMusicSource(track);
+                string musicPath = GetCurrentBeatmapAudioPath();
+                if (musicPath == null)
+                {
+                    Console.WriteLine("Beatmap music is missing; recording hitsounds only");
+                    recordHost.SetMusicSource(null);
+                }
+                else
+                {
+                    var volumeMusic = config.Get<double>(FrameworkSetting.VolumeMusic);
+                    var volumeUniversal = config.Get<double>(FrameworkSetting.VolumeUniversal);
+
+                    Console.WriteLine("Reading audio format...");
+                    sw.Restart();
+                    var track = new FFmpegMusicSource(musicPath, FFmpegAudioTools.FFmpegExec,
+                        volumeMusic * volumeUniversal);
+                    sw.Stop();
+                    Console.WriteLine($"Audio format loaded in {sw.ElapsedMilliseconds}ms");
+                    recordHost.SetMusicSource(track);
+                }
             }
 
             LocalConfig.SetValue(OsuSetting.GameplayLeaderboard, settings.ShowLeaderboard);

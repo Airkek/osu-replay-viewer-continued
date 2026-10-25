@@ -90,7 +90,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
         internal int BackgroundMusicAccepted;
         internal int BackgroundMusicFallbacks;
         private bool isAudioPlayed = false;
-        public bool NeedAudio => isAudioPatched && musicSource is null;
+        public bool NeedAudio => isAudioPatched && recordedAudio is null;
 
         private readonly GlRenderer rendererType;
         private RenderWrapper wrapper;
@@ -119,7 +119,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             backgroundMusicAttempted = false;
             musicSource?.Dispose();
             musicSource = source;
-            audioFormat = source.Format.CreateCopy();
+            audioFormat = source?.Format.CreateCopy() ?? new AudioFormat();
             audioFormat.PCMSize = 2;
             recordedAudio = new RecordedAudioMixer(audioFormat);
         }
@@ -211,7 +211,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
             timer.Stop();
 
             recordingStarted = false;
-            if (isAudioPatched && musicSource != null)
+            if (isAudioPatched && recordedAudio != null)
             {
                 Console.WriteLine("Rendering audio timeline...");
                 var sw = new Stopwatch();
@@ -223,7 +223,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                 try
                 {
                     long samples = CurrentOutputSample;
-                    string musicPath = Path.Combine(directory, "music.f32");
+                    string musicPath = musicSource == null ? null : Path.Combine(directory, "music.f32");
                     using (musicSource)
                     {
                         bool prepared = false;
@@ -249,7 +249,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                                 backgroundMusic = null;
                             }
                         }
-                        if (!prepared)
+                        if (!prepared && musicSource != null)
                             DynamicMusicRenderer.Render(musicSource, musicSegments, samples, musicPath, encoder.Config.FFmpegExec);
                     }
                     var audioEncoder = new ExternalAudioEncoder(Path.Combine(directory, "audio.m4a"),
