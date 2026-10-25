@@ -246,6 +246,25 @@ namespace osu_replay_renderer_netcore
 
         protected override void LoadComplete()
         {
+            try
+            {
+                LoadReplay();
+            }
+            catch (Exception error) when (error is RulesetLoadException or NotSupportedException)
+            {
+                FailReplayLoading(error.Message);
+            }
+        }
+
+        private void FailReplayLoading(string message)
+        {
+            Console.Error.WriteLine($"[Replay] {message}");
+            Environment.ExitCode = 1;
+            Exit();
+        }
+
+        private void LoadReplay()
+        {
             if (ListReplays)
             {
                 Console.WriteLine();
@@ -385,7 +404,7 @@ namespace osu_replay_renderer_netcore
                     // ReplayFileLocation is already checked at CLI stage
                     using (FileStream stream = new(ReplayFileLocation, FileMode.Open))
                     {
-                        var decoder = new DatabasedLegacyScoreDecoder(RulesetStore, BeatmapManager);
+                        var decoder = new RecorderScoreDecoder(RulesetStore, BeatmapManager);
 
                         try
                         {
@@ -410,18 +429,21 @@ namespace osu_replay_renderer_netcore
                 Console.Error.WriteLine("Unable to open: Score not found in osu!lazer installation");
                 Console.Error.WriteLine("Please make sure the score is imported in your osu!lazer installation");
                 Exit();
+                return;
             }
 
+            var scoreRuleset = ReplayCompatibility.CreateRuleset(score.ScoreInfo.Ruleset);
             if (ModsOverride.Count > 0)
             {
                 List<Mod> mods = new();
-                foreach (var mod in score.ScoreInfo.Ruleset.CreateInstance().AllMods)
+                foreach (var mod in scoreRuleset.AllMods)
                 {
                     if (mod is Mod mm && ModsOverride.Any(v => v.StartsWith("acronyms:") ? v[9..] == mod.Acronym : v == mod.Name)) mods.Add(mm);
                 }
                 score.ScoreInfo.Mods = mods.ToArray();
             }
 
+            ReplayCompatibility.ValidateMods(score.ScoreInfo.Mods);
             LoadViewer(score);
         }
 
@@ -545,6 +567,11 @@ namespace osu_replay_renderer_netcore
             loader.OnLoadComplete += _ =>
             {
                 sw.Stop();
+                if (!Player.LoadedBeatmapSuccessfully)
+                {
+                    FailReplayLoading("Player could not load the beatmap with the selected ruleset and mods; see runtime.log for details");
+                    return;
+                }
                 Console.WriteLine($"Player loaded in {sw.ElapsedMilliseconds}ms");
                 if (Host is ReplayRecordGameHost record)
                 {

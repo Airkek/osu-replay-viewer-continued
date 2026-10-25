@@ -74,6 +74,9 @@ namespace osu_replay_renderer_netcore
         protected override void LoadComplete()
         {
             base.LoadComplete();
+            if (!LoadedBeatmapSuccessfully)
+                return;
+
             if (!HUDOverlay.ShowHud.Disabled)
                 HUDOverlay.ShowHud.Value = leaderboard != null;
             HUDOverlay.HoldToQuit.Hide();
