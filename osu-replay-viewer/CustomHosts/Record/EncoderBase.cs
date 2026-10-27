@@ -37,6 +37,8 @@ public struct EncoderConfig
     public double? Quality;
     public string MaxBitrate;
     public string BufferSize;
+    public int? GopSize;
+    public int? AudioBitrate;
     public string FFmpegPath;
     public string FFmpegExec;
     public PixelFormatMode PixelFormat;

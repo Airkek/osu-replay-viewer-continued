@@ -16,6 +16,9 @@ internal static unsafe class NativeEncoderSettings
                 throw new ArgumentException($"The FFmpeg encoder rejected {option.Key}={option.Value}");
         }
 
+        if (config.GopSize.HasValue)
+            codec->gop_size = config.GopSize.Value;
+
         if (config.RateControl is VideoRateControl.ConstantBitrate or VideoRateControl.VariableBitrate)
         {
             codec->bit_rate = ParseBitrate(config.Bitrate);

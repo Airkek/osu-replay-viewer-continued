@@ -151,7 +151,7 @@ namespace osu_replay_renderer_netcore.CustomHosts.Record
                 throw new InvalidOperationException("Could not open output file");
 
             if (audioSampleRate > 0)
-                audioMuxer = new NativeAudioMuxer(_formatContext, audioSampleRate, audioChannels);
+                audioMuxer = new NativeAudioMuxer(_formatContext, audioSampleRate, audioChannels, Config.AudioBitrate ?? 192000);
 
             // Write header
             if (ffmpeg.avformat_write_header(_formatContext, null) < 0)

@@ -19,9 +19,10 @@ internal unsafe sealed class NativeAudioMuxer : IDisposable
     private long nextSample;
     private bool finished;
 
-    public NativeAudioMuxer(AVFormatContext* format, int sampleRate, int channels)
+    public NativeAudioMuxer(AVFormatContext* format, int sampleRate, int channels, int bitrate = 192000)
     {
         if (format == null) throw new ArgumentNullException(nameof(format));
+        if (bitrate <= 0) throw new ArgumentOutOfRangeException(nameof(bitrate));
         if (sampleRate <= 0 || channels < 1 || channels > 8)
             throw new ArgumentOutOfRangeException(nameof(sampleRate));
         this.format = format;
@@ -36,7 +37,7 @@ internal unsafe sealed class NativeAudioMuxer : IDisposable
             codec->channels = channels;
             codec->channel_layout = (ulong)av_get_default_channel_layout(channels);
             codec->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_FLTP;
-            codec->bit_rate = 192000;
+            codec->bit_rate = bitrate;
             codec->time_base = new AVRational { num = 1, den = sampleRate };
             if ((format->oformat->flags & AVFMT_GLOBALHEADER) != 0)
                 codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;

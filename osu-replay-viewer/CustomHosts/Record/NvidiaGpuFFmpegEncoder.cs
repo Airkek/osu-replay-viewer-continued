@@ -159,7 +159,7 @@ public unsafe class NvidiaGpuFFmpegEncoder : EncoderBase, IOpenGLTextureEncoder,
         ThrowIfError(avcodec_open2(codecContext, codec, null), "Could not open codec");
         ThrowIfError(avcodec_parameters_from_context(videoStream->codecpar, codecContext), "Could not copy codec parameters");
         if (audioSampleRate > 0)
-            audioMuxer = new NativeAudioMuxer(formatContext, audioSampleRate, audioChannels);
+            audioMuxer = new NativeAudioMuxer(formatContext, audioSampleRate, audioChannels, Config.AudioBitrate ?? 192000);
         if ((formatContext->oformat->flags & AVFMT_NOFILE) == 0)
             ThrowIfError(avio_open(&formatContext->pb, Config.OutputPath, AVIO_FLAG_WRITE), "Could not open output file");
         ThrowIfError(avformat_write_header(formatContext, null), "Could not write output header");

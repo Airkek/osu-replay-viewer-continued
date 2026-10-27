@@ -33,7 +33,8 @@ internal static class QueuedEncoderTests
             HardwareOptionsUseBackendSpecificFlags,
             BitrateControlIsExplicit,
             UnsupportedOptionsFailEarly,
-            InvalidRateControlCombinationFailsEarly
+            InvalidRateControlCombinationFailsEarly,
+            ConfigurableGopAndAudioBitrate
         ];
 
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ORV_FFMPEG")))
@@ -411,6 +412,43 @@ internal static class QueuedEncoderTests
             "A missing quality option was silently accepted");
     }
 
+    private static void ConfigurableGopAndAudioBitrate()
+    {
+        var config = RealFFmpegConfig("unused.mp4", PixelFormatMode.RGB);
+        config.Encoder = "h264_nvenc";
+        config.Preset = "p7";
+        config.RateControl = VideoRateControl.ConstantQuantizer;
+        config.Quality = 26;
+        config.GopSize = 450;
+        config.AudioBitrate = 160000;
+        var capabilities = new FFmpegEncoderCapabilities(new[] { "rc", "qp", "preset" });
+        var arguments = FFmpegEncoderOptions.Build(config, capabilities);
+        Assert(arguments.SequenceEqual(new[] { "-rc", "constqp", "-qp", "26", "-preset", "p7", "-g", "450" }),
+            "NVENC CQP/GOP profile was not passed correctly");
+        var native = FFmpegEncoderOptions.BuildNative(config, capabilities.Supports);
+        Assert(native.Count == 3 && !native.ContainsKey("g"), "GOP was passed as a private native option");
+        var encoder = new ExternalFFmpegEncoder(config);
+        encoder.ConfigureAudio(48000, 2);
+        var muxArguments = encoder.BuildArguments(capabilities, "video", "audio").ToList();
+        Assert(muxArguments[muxArguments.IndexOf("-b:a") + 1] == "160000", "AAC bitrate was ignored");
+        foreach (int invalid in new[] { 0, -1 })
+        {
+            config.GopSize = invalid;
+            Assert(Catch(() => FFmpegEncoderOptions.Build(config, capabilities)) is ArgumentOutOfRangeException,
+                "Invalid GOP size was accepted");
+            config.GopSize = null;
+            config.AudioBitrate = invalid;
+            Assert(Catch(() => FFmpegEncoderOptions.Build(config, capabilities)) is ArgumentOutOfRangeException,
+                "Invalid audio bitrate was accepted");
+            config.AudioBitrate = null;
+        }
+        encoder = new ExternalFFmpegEncoder(config);
+        encoder.ConfigureAudio(48000, 2);
+        muxArguments = encoder.BuildArguments(capabilities, "video", "audio").ToList();
+        Assert(!muxArguments.Contains("-g") && muxArguments[muxArguments.IndexOf("-b:a") + 1] == "192000",
+            "Default GOP or AAC bitrate changed");
+    }
+
     private static void InvalidRateControlCombinationFailsEarly()
     {
         var config = RealFFmpegConfig("unused.mp4", PixelFormatMode.RGB);
@@ -449,6 +487,8 @@ internal static class QueuedEncoderTests
             var config = RealFFmpegConfig(Path.Combine(directory, "clip with spaces.mp4"), PixelFormatMode.RGB);
             config.Resolution = new Size(width, height);
             config.FPS = fps;
+            config.GopSize = 15;
+            config.AudioBitrate = 160000;
             var inner = new ExternalFFmpegEncoder(config);
             using var queued = new QueuedEncoder(inner);
             queued.ConfigureAudio(44100, 2);
