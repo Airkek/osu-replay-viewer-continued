@@ -305,6 +305,8 @@ namespace osu_replay_renderer_netcore
                         Quality = orvConfig.FFmpegOptions.VideoQuality,
                         MaxBitrate = orvConfig.FFmpegOptions.VideoEncoderMaxBitrate,
                         BufferSize = orvConfig.FFmpegOptions.VideoEncoderBufferSize,
+                        GopSize = orvConfig.FFmpegOptions.VideoEncoderGopSize,
+                        AudioBitrate = orvConfig.FFmpegOptions.AudioEncoderBitrate,
 
                         // External only
                         FFmpegExec = orvConfig.FFmpegOptions.Executable,

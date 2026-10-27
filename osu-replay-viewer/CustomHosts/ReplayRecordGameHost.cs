@@ -253,7 +253,7 @@ namespace osu_replay_renderer_netcore.CustomHosts
                             DynamicMusicRenderer.Render(musicSource, musicSegments, samples, musicPath, encoder.Config.FFmpegExec);
                     }
                     var audioEncoder = new ExternalAudioEncoder(Path.Combine(directory, "audio.m4a"),
-                        audioFormat.SampleRate, audioFormat.Channels, encoder.Config.FFmpegExec);
+                        audioFormat.SampleRate, audioFormat.Channels, encoder.Config.FFmpegExec, encoder.Config.AudioBitrate ?? 192000);
                     audioEncoder.Start();
                     try
                     {

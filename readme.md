@@ -256,8 +256,29 @@ The default recording settings remain `libx264`, preset `slow`, CRF 21. NVENC us
 | `video_encoder_bitrate` | Target bitrate for explicitly selected VBR/CBR, for example `20M`; it does not limit CQP |
 | `video_encoder_max_bitrate` | Optional maximum bitrate for CQ/VBR |
 | `video_encoder_buffer_size` | Optional bitrate-control buffer size, for example `40M` |
+| `video_encoder_gop_size` | Optional maximum interval between keyframes, in frames (`-g`); `450` is 7.5 seconds at 60 FPS; omit or use `null` to keep the encoder default |
+| `audio_encoder_bitrate` | AAC bitrate in bits per second, for example `160000` for 160 kbit/s; defaults to `192000` |
 
 Lower QP/CRF values generally mean higher quality; VideoToolbox uses higher values for higher quality. Values from different encoders are not equivalent. Do not combine `video_quality` with VBR/CBR, or bitrate limits with CQP. Unsupported private encoder options are rejected before recording, and presets are passed only to encoders that support them.
+
+GOP size and audio bitrate must be positive integers and apply in both Pipe and Binding modes, including CUDA encoding. GOP size is a maximum interval; encoders can insert earlier keyframes, for example at scene changes.
+
+For an NVENC profile with CQP 26, preset `p7`, GOP 450 and AAC 160 kbit/s, set these fields in `ffmpeg_options`:
+
+```json
+{
+  "video_encoder": "h264_nvenc",
+  "video_encoder_preset": "p7",
+  "video_rate_control": "ConstantQuantizer",
+  "video_quality": 26,
+  "video_encoder_max_bitrate": null,
+  "video_encoder_buffer_size": null,
+  "video_encoder_gop_size": 450,
+  "audio_encoder_bitrate": 160000
+}
+```
+
+`video_encoder_bitrate` does not affect this CQP profile. Compare the same replay, skin and background at QP 21, 24 and 26 to choose a quality/size tradeoff; these settings do not guarantee a particular output size.
 
 For example, this explicitly selects 20 Mbit/s VBR for an NVIDIA Pipe recording at 720p60 with YUV420 input. Speed and visual quality depend on the FFmpeg build, driver, and workload:
 

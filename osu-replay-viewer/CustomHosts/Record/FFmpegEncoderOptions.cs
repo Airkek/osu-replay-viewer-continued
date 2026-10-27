@@ -71,6 +71,10 @@ internal static class FFmpegEncoderOptions
     internal static List<string> Build(EncoderConfig config, FFmpegEncoderCapabilities capabilities)
     {
         var arguments = new List<string>();
+        if (config.GopSize is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(config.GopSize), "GOP size must be a positive frame count");
+        if (config.AudioBitrate is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(config.AudioBitrate), "Audio bitrate must be positive, in bits per second");
         string name = config.Encoder ?? throw new ArgumentException("An encoder must be selected");
         bool nvenc = name.EndsWith("_nvenc", StringComparison.Ordinal);
         bool qsv = name.EndsWith("_qsv", StringComparison.Ordinal);
@@ -191,6 +195,8 @@ internal static class FFmpegEncoderOptions
             else if (amf && capabilities.Supports("quality"))
                 Private("quality", config.Preset switch { "slow" => "quality", "medium" => "balanced", "fast" => "speed", _ => config.Preset });
         }
+        if (config.GopSize.HasValue)
+            Add("g", config.GopSize.Value.ToString(CultureInfo.InvariantCulture));
         return arguments;
     }
 }

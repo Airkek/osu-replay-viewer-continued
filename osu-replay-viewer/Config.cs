@@ -58,6 +58,8 @@ public class Config
         [JsonProperty("video_quality")] public double? VideoQuality;
         [JsonProperty("video_encoder_max_bitrate")] public string VideoEncoderMaxBitrate;
         [JsonProperty("video_encoder_buffer_size")] public string VideoEncoderBufferSize;
+        [JsonProperty("video_encoder_gop_size")] public int? VideoEncoderGopSize;
+        [JsonProperty("audio_encoder_bitrate")] public int AudioEncoderBitrate = 192000;
         [JsonProperty("use_cuda_if_possible")] public bool UseCudaIfPossible = true;
         
     }

@@ -61,7 +61,8 @@ public class ExternalFFmpegEncoder : EncoderBase, IEncoderAudioInput
         {
             arguments.AddRange(new[] { "-thread_queue_size", "32", "-nofind_stream_info", "-f", "s16le",
                 "-ar", sampleRate.ToString(System.Globalization.CultureInfo.InvariantCulture), "-ac", channels.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", audioUrl,
-                "-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a", "192k" });
+                "-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-b:a",
+                (Config.AudioBitrate ?? 192000).ToString(System.Globalization.CultureInfo.InvariantCulture) });
         }
         arguments.AddRange(new[] { "-c:v", Config.Encoder });
         if (Config.PixelFormat == PixelFormatMode.RGB)
