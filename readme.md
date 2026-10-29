@@ -1,149 +1,115 @@
 # osu! Replay Viewer Continued
-_Based on osu!lazer_
 
-Fork of [nahkd123](https://github.com/nahkd123)'s [osu-replay-viewer](https://github.com/nahkd123/osu-replay-viewer)
+View osu! replays and render them to video using osu!lazer components and FFmpeg. Supports custom skins, an online leaderboard, and replay downloads through osu! API v2.
 
-This replay viewer allow you to view imported replays (yes you have to import them in osu!lazer
-client) without launching the actual game, and you can also render replays to video files, thanks
-to FFmpeg.
+Based on [nahkd123/osu-replay-viewer](https://github.com/nahkd123/osu-replay-viewer).
 
-This project aims to make replay viewer without modifying the official game code or write entire
-thing from scratch, but uses components from the game instead. Because of this, it's much more easy
-to upgrade to make UI matches with actual game
+## Requirements and build
 
-> This project somewhat implemented [this](https://github.com/ppy/osu/discussions/12986) idea (except
-  we're running outside the official client)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- A graphics device and drivers compatible with osu!lazer
+- [FFmpeg](https://www.ffmpeg.org/download.html) on `PATH` for recording, with the selected video encoder and AAC support
 
-## Features
-- View downloaded replays (now with custom skins support)
-- Render replays to video file (FFmpeg required)
-- Show the online beatmap leaderboard during replay viewing and recording
-- Download replays through osu! API v2 using application credentials
-
-Recording always uses SingleThread execution to preserve replay simulation accuracy.
-MultiThreaded settings in `framework.ini` or runtime changes are ignored while recording.
-Replay viewing keeps the configured execution mode.
-
-With `--osu-mode`, the original osu! Realm is opened read-only to create a temporary working
-snapshot. Runtime caches, ruleset updates and other database maintenance affect only that snapshot,
-which is removed on exit. Pending deletions and file-store cleanup are disabled so they cannot
-remove osu! files. Explicit beatmap, skin and replay archive imports use the normal osu! importers
-to write to the original database, then copy the imported records and IDs into the working snapshot.
-The original database is never automatically migrated, recovered or recreated; an incompatible,
-missing or unreadable database causes the operation to fail. Changes made by another osu! process
-after the snapshot was created are not reflected in the viewer. This protects the Realm and its
-file store; osu! configuration and log files still use the selected storage directory.
-
-Replay viewing and recording do not log in to osu!, including with `--osu-mode`. Saved osu!lazer
-login credentials are not used or cleared. `--view online <score ID>` selects an already downloaded
-replay from local storage by its online score ID.
-
-## Basic Usage
-- [ ] TODO
-
-## Requirements
-- [.NET 10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
-- OpenGL ES 3.0 compatible device
-- FFmpeg installed
-
-## Installing FFmpeg
-1. Grab FFmpeg binaries [here](https://www.ffmpeg.org/download.html)
-  > Linux and MacOS users can also install FFmpeg from package manager included in their distribution
-
-  > Windows users can download FFmpeg [here](https://www.gyan.dev/ffmpeg/builds/) or
-    [here](https://github.com/BtbN/FFmpeg-Builds/releases)
-
-2. Include ``ffmpeg`` in command line path
-3. Confirm that it's working by running ``ffmpeg`` alone
-
-> For the best encoding speed, you can install FFmpeg with hardware acceleration. To actually use
-  hardware acceleration, see [hardware acceleration](#hardware-acceleration)
-
-## Command Line arguments
-> You can view all command line arguments by running the executable without arguments
-
-Output of ``osu-replay-viewer --help``:
-```
-Usage:
-  dotnet run osu-replay-viewer [options...]
-  osu-replay-viewer [options...]
-
-  --yes
-    Always Yes
-    Always answer yes to all prompts. Similar to 'command | yes'
-
-  --mod-override           <<Mod Name/acronyms:AC>>
-    Alternatives: -MOD
-    Mod Override
-    Override Mod(s). You can use 'no-mod' or 'acronyms:NM' to clear all mods
-
-  --query                  <Keyword>
-    Alternatives: -q
-    Query
-    Query data (Eg: find something in help index or query replays)
-
-  --osu-mode
-    Alternatives: -osu
-    osu!lazer mode
-    Use osu!lazer data (songs, skins, replays)
-
-  --import-beatmap         <path/to/File.osz>
-    Alternatives: -osz
-    Import beatmap
-    Import beatmap from file
-
-  --list
-    Alternatives: -list, -l
-    List Replays
-    List all local replays
-
-  --view                   <Type (local/online/file/auto/api)> <Score GUID/Beatmap ID (auto)/File.osr>
-    Alternatives: -view, -i
-    View Replay
-    Select a replay to view. This options must be always present (excluding -list options)
-
-  --help
-    Alternatives: -h
-    Help Index
-    View help with details
-
-  --config                 </path/to/config.json>
-    Alternatives: -c
-    osu-replay-viewer config path
-    Use config from file
-
-  --record
-    Alternatives: -R
-    Record Mode
-    Switch to record mode
-
-  --record-output          <Output = osu-replay.mp4>
-    Alternatives: -O
-    Record Output
-    Set record output
-
-  --overlay-override       <true/false>
-    Alternatives: -overlay
-    Override Overlay Options
-    Control the visiblity of player overlay
-
-  --skin                   <Type (import/select)> <Skin name/File.osk>
-    Alternatives: -skin, -s
-    Select Skin
-    Select a skin to use in replay
-
-  --list-skin
-    Alternatives: --list-skins, -lskins, -lskin
-    List Skins
-    List all available skins
+```sh
+git clone --recurse-submodules https://github.com/Airkek/osu-replay-viewer-continued.git
+cd osu-replay-viewer-continued
+dotnet build -c Release
 ```
 
-## Leaderboard during replays
+For an existing checkout, initialize the submodule with `git submodule update --init --recursive`.
 
-Register an [osu! OAuth application](https://osu.ppy.sh/home/account/edit#new-oauth-application)
-and copy its **Client ID** and **Client Secret** into your viewer config. A callback URL is not
-needed for the client credentials grant. Add these sections to `osu-replay-viewer-config.json`
-(or the file selected by `--config`):
+## Usage
+
+Run from the repository root. The matching beatmap must be imported into the selected storage before playing a replay.
+
+View a replay using your osu!lazer beatmaps and skins:
+
+```sh
+dotnet run --project osu-replay-viewer -c Release -- --osu-mode --view file replay.osr
+```
+
+Record it to MP4:
+
+```sh
+dotnet run --project osu-replay-viewer -c Release -- --osu-mode --view file replay.osr --record --record-output replay.mp4
+```
+
+List imported replays or available skins:
+
+```sh
+dotnet run --project osu-replay-viewer -c Release -- --osu-mode --list
+dotnet run --project osu-replay-viewer -c Release -- --osu-mode --list-skins
+```
+
+Useful options to append to a viewing or recording command:
+
+| Option | Purpose |
+|--------|---------|
+| `--skin select "Skin name"` | Use an imported skin |
+| `--skin import skin.osk --preserve` | Import a skin and keep the source archive |
+| `--import-beatmap map.osz --preserve` | Import a beatmap and keep the source archive |
+| `--mod-override acronyms:HD` | Override replay mods; `acronyms:NM` clears them |
+| `--config config.json` | Use a different config file |
+| `--yes` | Accept prompts, including overwriting output files |
+
+Use `--view local <GUID>` for an imported replay, `--view online <score ID>` for a locally stored replay with that online ID, or `--view auto <beatmap ID>` for autoplay. `online` does not download replays.
+
+See all options with `dotnet run --project osu-replay-viewer -c Release -- --help`.
+
+### Storage
+
+Without `--osu-mode`, the viewer uses its own storage. With `--osu-mode`, it reads your osu!lazer database into a temporary snapshot; explicit beatmap, skin, and replay archive imports write to the original storage. Changes made by another osu! process after the snapshot was created are not reflected until the next run. An incompatible database causes an error instead of being migrated. Configuration and logs still use the selected storage directory.
+
+The viewer does not sign in to osu! or use saved osu!lazer login credentials.
+
+## Recording settings
+
+The viewer creates or updates `osu-replay-viewer-config.json` on launch. Edit it to change recording settings, or select another file with `--config`. Defaults are 1280×720 at 60 FPS, `libx264`, preset `slow`, CRF 21, and AAC at 192 kbit/s.
+
+For example, to use NVIDIA hardware encoding:
+
+```json
+{
+  "record_options": {
+    "fps": 60,
+    "resolution": "1280x720"
+  },
+  "ffmpeg_options": {
+    "mode": "Pipe",
+    "ffmpeg_executable": "ffmpeg",
+    "video_encoder": "h264_nvenc",
+    "video_encoder_preset": "p7",
+    "video_rate_control": "ConstantQuantizer",
+    "video_quality": 21
+  },
+  "output_options": {
+    "pixel_format": "YUV420"
+  }
+}
+```
+
+Hardware encoding requires a compatible GPU, driver, and FFmpeg build. Other H.264 encoders include `h264_qsv` (Intel), `h264_amf` (AMD), and `h264_videotoolbox` (Apple). Presets and quality scales depend on the encoder.
+
+Optional fields in `ffmpeg_options`:
+
+| Setting | Purpose |
+|---------|---------|
+| `video_rate_control` | `ConstantQuantizer`, `ConstantQuality`, `VariableBitrate`, or `ConstantBitrate` |
+| `video_quality` | Quality for CQP/CQ; lower generally means better quality, except VideoToolbox |
+| `video_encoder_bitrate` | Target bitrate for VBR/CBR, e.g. `"20M"` |
+| `video_encoder_max_bitrate`, `video_encoder_buffer_size` | Optional CQ/VBR bitrate limit and buffer size |
+| `video_encoder_gop_size` | Maximum keyframe interval in frames |
+| `audio_encoder_bitrate` | Audio bitrate in bits per second |
+
+Do not combine `video_quality` with VBR/CBR, or bitrate limits with CQP.
+
+Recording uses SingleThread execution to preserve replay accuracy. Replays with speed changes that preserve pitch require FFmpeg's `rubberband` filter; check it with `ffmpeg -hide_banner -h filter=rubberband`. Allow temporary disk space for audio processing.
+
+The default `Pipe` mode uses the FFmpeg executable. `Binding` mode additionally requires compatible FFmpeg shared libraries configured through `libraries_path`.
+
+## osu! API
+
+Register an [osu! OAuth application](https://osu.ppy.sh/home/account/edit#new-oauth-application) and add its credentials to the viewer config:
 
 ```json
 {
@@ -157,200 +123,25 @@ needed for the client credentials grant. Add these sections to `osu-replay-viewe
 }
 ```
 
-`game_settings.show_leaderboard` defaults to `false`. When enabled, the viewer fetches the
-current map's global top 50 for the replay's ruleset before playback starts and supplies it to
-lazer's existing replay leaderboard provider. The leaderboard is shown during viewing and
-recording through the native HUD and `GameplayLeaderboard` toggle. osu! manages the active skin's
-HUD components and layout itself, including when replay controls are hidden. A skin without a
-leaderboard does not get an extra panel.
+Alternatively, set `OSU_API_CLIENT_ID` and `OSU_API_CLIENT_SECRET`; they override config credentials. Keep client secrets private. The default config filename is ignored by Git.
 
-The standard replay provider tracks the replay's live score, accuracy and combo and updates its
-position as scores are overtaken or playback is rewound. A position below the fetched top is
-left unknown when the full leaderboard is larger than the fetched results.
+Credentials enable player profile/avatar lookup. `show_leaderboard` additionally loads the map's global top 50 before playback; it defaults to `false` and requires a leaderboard component in the active skin. Profile or leaderboard failures do not prevent playback.
 
-The leaderboard is a snapshot taken before playback; it includes stable and lazer scores without
-a mod filter. Missing credentials, unavailable beatmaps, or API errors produce a message and
-continue playback without the leaderboard. The leaderboard fetch does not run when the setting
-is disabled.
-
-These requests use `client_credentials` with the `public` scope, independently of the saved
-osu!lazer login. You can also provide `OSU_API_CLIENT_ID` and `OSU_API_CLIENT_SECRET` as environment
-variables; they override the corresponding config fields and are not copied into the config.
-The default config filename is ignored by Git because it can contain credentials.
-
-The same credentials also load the replay player's profile before playback and recording,
-independently of `show_leaderboard`. The viewer looks up the player by ID when available, or by
-username for stable `.osr` files, so the native HUD and results screen can display their avatar.
-Without credentials or if the profile request fails, playback continues with the player data
-stored in the replay. Avatar images are downloaded from osu!'s public image servers; a skin must
-include an avatar component for one to appear during gameplay.
-
-### Download a replay
-
-Use the modern API v2 score ID (`scores[].id`, not `legacy_score_id`):
+Download a replay using its API v2 score ID (`id`, not `legacy_score_id`):
 
 ```sh
-osu-replay-viewer --download-replay 123456789 --replay-output replay.osr
+dotnet run --project osu-replay-viewer -c Release -- --download-replay 123456789 --replay-output replay.osr
 ```
 
-`--replay-output` defaults to `<score ID>.osr`. An existing file is preserved unless `--yes` is
-provided; failed downloads do not replace it. The output directory must already exist. An
-unavailable replay or API failure returns a nonzero exit code.
+Use `--osu-mode --view api 123456789` to download and play it, and append `--record --record-output replay.mp4` to record it. The beatmap must already be imported. Downloads default to `<score ID>.osr`; the output directory must exist, and `--yes` allows overwriting an existing file.
 
-To download a replay and immediately view or record it:
+## Checks
+
+Regression checks are standalone console projects under `osu-replay-viewer.Tests`:
 
 ```sh
-osu-replay-viewer --osu-mode --view api 123456789 --replay-output replay.osr
-osu-replay-viewer --osu-mode --view api 123456789 --record --record-output replay.mp4 --yes
+dotnet run --project osu-replay-viewer.Tests/EncoderChecks -c Release
+dotnet run --project osu-replay-viewer.Tests/GpuChecks -c Release
 ```
 
-The matching beatmap must already be imported locally. `--view online <score ID>` retains its
-local lookup behavior; `--view api <score ID>` explicitly downloads a replay before opening it.
-
-## Build
-To build this project, you need:
-
-- .NET 10.0 SDK
-- Git
-
-Clone this repository (``git clone``), then build it with ``dotnet build -c Release`` command.
-
-You can also build and run directly, using ``dotnet run osu-replay-viewer``
-
-## Troubleshooting
-### "No corresponding beatmap for the score could be found"
-You need to import the beatmap to your current osu!lazer installation (works best with ranked maps).
-
-## Tips
-### Hardware Acceleration
-To use hardware acceleration, you need:
-- FFmpeg with hardware acceleration
-- Compatible hardware (Intel, AMD or NVIDIA GPUs)
-- Driver
-
-Set ``video_encoder`` config option to ``h264_<qsv/amf/nvenc/videotoolbox>`` or ``hevc_<qsv/amf/nvenc/videotoolbox>`` to
-enable hardware encoding.
-
-Here is the table for hardware encoders:
-| Vendor | Encoder           | Codec | Note     |
-|--------|-------------------|-------|----------|
-| any    | libx264           | H.264 | Uses CPU |
-| Intel  | h264_qsv          | H.264 |          |
-| AMD    | h264_amf          | H.264 |          |
-| NVIDIA | h264_nvenc        | H.264 |          |
-| Apple  | h264_videotoolbox | H.264 |          |
-| any    | libx265           | HEVC  | Uses CPU |
-| Intel  | hevc_qsv          | HEVC  |          |
-| AMD    | hevc_amf          | HEVC  |          |
-| NVIDIA | hevc_nvenc        | HEVC  |          |
-| Apple  | hevc_videotoolbox | HEVC  |          |
-
-### Encoder settings
-
-The default recording settings remain `libx264`, preset `slow`, CRF 21. NVENC uses CQP 21 unless another rate-control mode is selected. The following `ffmpeg_options` settings are optional:
-
-| Setting | Meaning |
-|---------|---------|
-| `video_rate_control` | `ConstantQuantizer`, `ConstantQuality`, `VariableBitrate`, or `ConstantBitrate`; omit or use `null` to keep the encoder defaults above |
-| `video_quality` | Quality for CQP/CQ modes; the scale depends on the codec (QP/CRF/CQ/ICQ, or VideoToolbox 0–100) |
-| `video_encoder_bitrate` | Target bitrate for explicitly selected VBR/CBR, for example `20M`; it does not limit CQP |
-| `video_encoder_max_bitrate` | Optional maximum bitrate for CQ/VBR |
-| `video_encoder_buffer_size` | Optional bitrate-control buffer size, for example `40M` |
-| `video_encoder_gop_size` | Optional maximum interval between keyframes, in frames (`-g`); `450` is 7.5 seconds at 60 FPS; omit or use `null` to keep the encoder default |
-| `audio_encoder_bitrate` | AAC bitrate in bits per second, for example `160000` for 160 kbit/s; defaults to `192000` |
-
-Lower QP/CRF values generally mean higher quality; VideoToolbox uses higher values for higher quality. Values from different encoders are not equivalent. Do not combine `video_quality` with VBR/CBR, or bitrate limits with CQP. Unsupported private encoder options are rejected before recording, and presets are passed only to encoders that support them.
-
-GOP size and audio bitrate must be positive integers and apply in both Pipe and Binding modes, including CUDA encoding. GOP size is a maximum interval; encoders can insert earlier keyframes, for example at scene changes.
-
-For an NVENC profile with CQP 26, preset `p7`, GOP 450 and AAC 160 kbit/s, set these fields in `ffmpeg_options`:
-
-```json
-{
-  "video_encoder": "h264_nvenc",
-  "video_encoder_preset": "p7",
-  "video_rate_control": "ConstantQuantizer",
-  "video_quality": 26,
-  "video_encoder_max_bitrate": null,
-  "video_encoder_buffer_size": null,
-  "video_encoder_gop_size": 450,
-  "audio_encoder_bitrate": 160000
-}
-```
-
-`video_encoder_bitrate` does not affect this CQP profile. Compare the same replay, skin and background at QP 21, 24 and 26 to choose a quality/size tradeoff; these settings do not guarantee a particular output size.
-
-For example, this explicitly selects 20 Mbit/s VBR for an NVIDIA Pipe recording at 720p60 with YUV420 input. Speed and visual quality depend on the FFmpeg build, driver, and workload:
-
-```json
-{
-  "record_options": {
-    "fps": 60,
-    "resolution": "1280x720"
-  },
-  "ffmpeg_options": {
-    "mode": "Pipe",
-    "ffmpeg_executable": "ffmpeg",
-    "video_encoder": "h264_nvenc",
-    "video_encoder_preset": "slow",
-    "video_rate_control": "VariableBitrate",
-    "video_encoder_bitrate": "20M",
-    "video_encoder_max_bitrate": "30M",
-    "video_encoder_buffer_size": "40M"
-  },
-  "output_options": {
-    "pixel_format": "YUV420"
-  }
-}
-```
-
-### Audio and video recording
-
-All replays use the same audio timeline, including NM, DT/HT, Wind Up/Wind Down, and Adaptive Speed. Video is rendered at the configured constant FPS while gameplay time advances using the live track speed. Music positions, frequency/tempo changes, and hitsound events are recorded during playback. After the video finishes, music and hitsounds are mixed, encoded to AAC, and muxed into the video without re-encoding its frames.
-
-Before rendering, only the music format header is read from the FFmpeg decoder. After the video finishes, the same decoder supplies PCM on demand with a bounded cache, avoiding a second process startup for playback from the beginning. Failed scores decode only the portion that was played, and seeks restart decoding at the required source position. Changes that also change pitch use band-limited resampling. Preserving pitch uses FFmpeg's native `rubberband` filter with timestamped tempo/pitch commands; SoundTouch.Net is not used for music. Negative lead-in and time after the end of the source track produce silence. Temporary PCM and AAC files are removed after rendering; allow temporary disk space for the rendered music.
-
-Pipe mode needs an FFmpeg executable with TCP input, AAC encoding, and the selected video encoder. Replays with pitch-preserving speed changes also require the `rubberband` filter (`--enable-librubberband`). Check its availability with `ffmpeg -hide_banner -h filter=rubberband`. Pipe mode does not require FFmpeg shared DLLs/`.so` files or `libraries_path`; those are for Binding mode. Existing renderer and GPU driver requirements still apply.
-
-Run the audio and clock checks with .NET 10:
-
-```sh
-dotnet run --project tests/ClockChecks -c Release
-dotnet run --project tests/AudioPipelineChecks -c Release
-dotnet run --project tests/DynamicMusicChecks -c Release
-ORV_FFMPEG=/path/to/ffmpeg dotnet run --project tests/AudioTimelineChecks -c Release
-ORV_FFMPEG=/path/to/ffmpeg dotnet run --project tests/StreamingMusicChecks -c Release
-```
-
-Set `ORV_FFMPEG=/path/to/ffmpeg` for audio codec integration checks. For the native dynamic tempo and transient timing checks, also set `ORV_FFMPEG_HAS_RUBBERBAND=1` when running `tests/DynamicMusicChecks` with a Rubber Band-enabled FFmpeg build.
-
-### Encoder regression checks
-
-Run the managed queue, ownership, and option checks with .NET 10:
-
-```sh
-dotnet run --project osu-replay-viewer.Tests -c Release
-```
-
-Set `ORV_FFMPEG` to also run real software-encoder round trips and combined audio/video checks, including high-FPS startup, short clips, paths with spaces, and process failures:
-
-```sh
-ORV_FFMPEG=/path/to/ffmpeg dotnet run --project osu-replay-viewer.Tests -c Release
-```
-
-These checks use `libx264` and AAC and do not validate NVENC, QSV, AMF, or VideoToolbox hardware performance or visual equivalence.
-
-The optional production-profile check records 120 frames at 1280×720/60 fps with YUV420, the `slow` preset, default NVENC CQP 21, and 48 kHz stereo audio. It checks decoded frame/audio lengths and a shared audio/video timing marker. Run it inside the existing NVIDIA-enabled Docker container:
-
-```sh
-ORV_FFMPEG=/usr/bin/ffmpeg ORV_HARDWARE_ENCODER=h264_nvenc ORV_HARDWARE_PRESET=p7 dotnet run --project osu-replay-viewer.Tests -c Release
-```
-
-The hardware check reports an explicit skip when `ORV_HARDWARE_ENCODER` is unset. It needs the selected encoder and GPU access in the container; no additional published ports or FFmpeg shared libraries are required for Pipe mode.
-
-## Planned
-This is the list of stuffs that I want to changes. It can be planned features or just revamp the code.
-
-- Live Graphs (Live PP, accuracy or difficulty)
-- Split CLI system to seperate project (if you're willing to use it)
-- Change the project name
+Use the same command with another check project's name. Set `ORV_FFMPEG=/path/to/ffmpeg` to enable FFmpeg integration checks. `DynamicMusicChecks` also uses `ORV_FFMPEG_HAS_RUBBERBAND=1` for native tempo checks; `EncoderChecks` uses `ORV_HARDWARE_ENCODER=h264_nvenc` for an optional hardware check.

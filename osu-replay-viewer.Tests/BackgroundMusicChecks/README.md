@@ -3,7 +3,7 @@
 The checks compile the production music sources directly. They require .NET 10 when building and an FFmpeg executable with `asendcmd` and `rubberband` when running. Set `ORV_FFMPEG` to its full path if it is absent from `PATH`.
 
 ```sh
-dotnet publish tests/BackgroundMusicChecks/BackgroundMusicChecks.csproj -c Release -r linux-x64 --self-contained true -o /tmp/music-checks -m:1 --disable-build-servers
+dotnet publish osu-replay-viewer.Tests/BackgroundMusicChecks/BackgroundMusicChecks.csproj -c Release -r linux-x64 --self-contained true -o /tmp/music-checks -m:1 --disable-build-servers
 ORV_FFMPEG=/usr/bin/ffmpeg /tmp/music-checks/BackgroundMusicChecks
 ```
 
