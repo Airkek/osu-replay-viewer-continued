@@ -46,6 +46,7 @@ internal static class QueuedEncoderTests
                 RealFFmpegPreservesYUV420Frames,
                 RealFFmpegPreservesYUV444Frames,
                 RealFFmpegPreservesNV12Frames,
+                RealFFmpegPreservesYuvColorValues,
                 RealFFmpegFailureIsReportedAndProcessIsReleased,
                 RealFFmpegMuxesAudioAndVideo,
                 RealFFmpegMuxesProductionFrameRate,
@@ -695,6 +696,59 @@ internal static class QueuedEncoderTests
     private static void RealFFmpegPreservesYUV420Frames() => RealFFmpegRoundTrip(PixelFormatMode.YUV420);
     private static void RealFFmpegPreservesYUV444Frames() => RealFFmpegRoundTrip(PixelFormatMode.YUV444);
     private static void RealFFmpegPreservesNV12Frames() => RealFFmpegRoundTrip(PixelFormatMode.NV12);
+
+    private static void RealFFmpegPreservesYuvColorValues()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"orv-color-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            foreach (var format in new[] { PixelFormatMode.YUV420, PixelFormatMode.YUV444, PixelFormatMode.NV12 })
+            foreach (var colorSpace in new[] { ColorSpaceMode.BT601, ColorSpaceMode.BT709 })
+            {
+                var config = RealFFmpegConfig(Path.Combine(directory, "clip.mkv"), format);
+                config.ColorSpace = colorSpace;
+                config.RateControl = VideoRateControl.ConstantQuantizer;
+                config.Quality = 0;
+                using var encoder = new QueuedEncoder(new ExternalFFmpegEncoder(config));
+                int planeSize = config.Resolution.Width * config.Resolution.Height;
+                byte[] frame = new byte[format == PixelFormatMode.YUV444 ? planeSize * 3 : planeSize * 3 / 2];
+                byte[] levels = [0, 16, 64, 128, 192, 235, 255];
+                for (int i = 0; i < planeSize; i++)
+                    frame[i] = levels[i % levels.Length];
+                for (int i = planeSize; i < frame.Length; i++)
+                    frame[i] = (byte)((i * 37) % 256);
+                encoder.Start();
+                encoder.WriteFrame(frame);
+                encoder.Finish();
+
+                using var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo(config.FFmpegExec)
+                    {
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    }
+                };
+                string pixelFormat = format == PixelFormatMode.YUV444 ? "yuv444p" : format == PixelFormatMode.NV12 ? "nv12" : "yuv420p";
+                foreach (string argument in new[] { "-v", "error", "-i", config.OutputPath, "-f", "rawvideo", "-pix_fmt", pixelFormat, "pipe:1" })
+                    process.StartInfo.ArgumentList.Add(argument);
+                process.Start();
+                using var decoded = new MemoryStream();
+                var output = process.StandardOutput.BaseStream.CopyToAsync(decoded);
+                var error = process.StandardError.ReadToEndAsync();
+                if (!Task.WaitAll(new Task[] { output, error }, TimeSpan.FromSeconds(10)) || !process.WaitForExit(10000))
+                {
+                    process.Kill(true);
+                    throw new Exception("Color decode timed out");
+                }
+                Assert(process.ExitCode == 0, $"Color decode failed: {error.Result}");
+                Assert(frame.SequenceEqual(decoded.ToArray()), $"{format}/{colorSpace}: lossless encoding changed YUV color values");
+            }
+        }
+        finally { Directory.Delete(directory, true); }
+    }
 
     private static void RealFFmpegRoundTrip(PixelFormatMode format)
     {

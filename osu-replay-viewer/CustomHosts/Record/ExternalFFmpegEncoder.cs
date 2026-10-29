@@ -52,11 +52,18 @@ public class ExternalFFmpegEncoder : EncoderBase, IEncoderAudioInput
             PixelFormatMode.NV12 => "nv12",
             _ => "rgb24"
         };
+        string[] colorArguments = Config.ColorSpace == ColorSpaceMode.BT601
+            ? new[] { "-colorspace", "bt470bg", "-color_primaries", "bt470bg", "-color_trc", "gamma22", "-color_range", "pc" }
+            : new[] { "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "pc" };
         var arguments = new List<string> { "-y", "-hide_banner", "-nostdin" };
         if (audioUrl != null)
             arguments.AddRange(new[] { "-thread_queue_size", "8", "-nofind_stream_info" });
         arguments.AddRange(new[] { "-f", "rawvideo", "-pixel_format", pixelFormat,
-            "-video_size", $"{Config.Resolution.Width}x{Config.Resolution.Height}", "-framerate", Config.FPS.ToString(System.Globalization.CultureInfo.InvariantCulture), "-i", videoUrl });
+            "-video_size", $"{Config.Resolution.Width}x{Config.Resolution.Height}", "-framerate", Config.FPS.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        // Describe the shader's full-range YUV input before FFmpeg inserts automatic conversions
+        if (Config.PixelFormat != PixelFormatMode.RGB)
+            arguments.AddRange(colorArguments);
+        arguments.AddRange(new[] { "-i", videoUrl });
         if (audioUrl != null)
         {
             arguments.AddRange(new[] { "-thread_queue_size", "32", "-nofind_stream_info", "-f", "s16le",
@@ -68,9 +75,7 @@ public class ExternalFFmpegEncoder : EncoderBase, IEncoderAudioInput
         if (Config.PixelFormat == PixelFormatMode.RGB)
             arguments.AddRange(new[] { "-vf", "vflip" });
         else
-            arguments.AddRange(Config.ColorSpace == ColorSpaceMode.BT601
-                ? new[] { "-colorspace", "bt470bg", "-color_primaries", "bt470bg", "-color_trc", "gamma22", "-color_range", "pc" }
-                : new[] { "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "pc" });
+            arguments.AddRange(colorArguments);
         arguments.AddRange(FFmpegEncoderOptions.Build(Config, capabilities));
         // FFmpeg 4.x can otherwise choose 25 FPS when input stream probing is disabled
         arguments.AddRange(new[] { "-r", Config.FPS.ToString(System.Globalization.CultureInfo.InvariantCulture),
